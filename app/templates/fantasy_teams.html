@@ -1,0 +1,353 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% set can_edit_points = session.get('role') in ['admin', 'editor'] %}
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <h1 class="h4 mb-1">Fantasy Teams</h1>
+        <p class="mb-0 text-muted">{{ selected_draft.name }} ({{ selected_draft.year }})</p>
+    </div>
+</div>
+
+{% if not fantasy_payload.teams %}
+<div class="alert alert-warning">No fantasy teams found for this draft.</div>
+{% else %}
+    {% for team in fantasy_payload.teams %}
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h2 class="h5 mb-0">
+                    {% if team.draft_position %}
+                    #{{ team.draft_position }}
+                    {% else %}
+                    #-
+                    {% endif %}
+                    {{ team.name }}
+                </h2>
+                <span class="badge text-bg-primary">Team Total: {{ team.team_total }}</span>
+            </div>
+
+            {% if team.players %}
+            <div class="table-responsive">
+                <table class="table table-sm align-middle fantasy-teams-table" data-update-url="{{ url_for('main.fantasy_teams_update_points') }}">
+                    <thead>
+                        <tr>
+                            <th>Player</th>
+                            {% for round in fantasy_payload.round_columns %}
+                            <th class="text-end round-col border-start">{{ round.label }}</th>
+                            {% endfor %}
+                            <th class="text-end total-col border-start">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for player in team.players %}
+                        <tr data-player-row="true" data-player-id="{{ player.player_id }}">
+                            <td>
+                                <div class="fw-semibold">{{ player.player_name }}</div>
+                                <div class="small text-muted">{{ player.college_team_name }} | Pick #{{ player.pick_number }}</div>
+                                <div class="d-flex flex-wrap align-items-center gap-2 mt-1">
+                                    {% if player.is_eliminated %}
+                                    <span class="badge text-bg-danger">Eliminated</span>
+                                    {% else %}
+                                    <span class="badge text-bg-success-subtle border border-success-subtle text-success-emphasis">Active</span>
+                                    {% endif %}
+                                    {% if can_edit_points %}
+                                    <form method="post" action="{{ url_for('main.fantasy_teams_toggle_eliminated') }}" class="d-inline">
+                                        <input type="hidden" name="player_id" value="{{ player.player_id }}">
+                                        <input type="hidden" name="is_eliminated" value="{{ 'false' if player.is_eliminated else 'true' }}">
+                                        <button type="submit" class="btn btn-outline-secondary btn-sm py-0 px-2">
+                                            {% if player.is_eliminated %}Unmark Eliminated{% else %}Mark Eliminated{% endif %}
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                </div>
+                                {% if can_edit_points %}
+                                <div class="row-point-actions d-none mt-1">
+                                    <button type="button" class="btn btn-success btn-sm row-point-confirm">Confirm</button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm row-point-cancel">Cancel</button>
+                                    <span class="row-point-error text-danger small d-none"></span>
+                                </div>
+                                {% endif %}
+                            </td>
+                            {% for round in fantasy_payload.round_columns %}
+                            {% set point_value = player.points.get(round.key) %}
+                            {% if can_edit_points %}
+                            <td class="text-end round-col border-start">
+                                    <div class="point-cell" data-round-value="{{ 0 if round.key == 'P' else round.key }}" data-original-value="{{ '' if point_value is none else point_value }}" title="Click to edit points">
+                                        <span class="point-display">{{ point_value if point_value is not none else '_' }}</span>
+                                    <input class="form-control form-control-sm point-input d-none" type="number" min="0" step="1" value="{{ '' if point_value is none else point_value }}">
+                                </div>
+                            </td>
+                            {% else %}
+                            <td class="text-end round-col border-start">{{ point_value if point_value is not none else '_' }}</td>
+                            {% endif %}
+                            {% endfor %}
+                            <td class="text-end fw-semibold total-col border-start">{{ player.total }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="table-light">
+                            <th>Round Totals</th>
+                            {% for round in fantasy_payload.round_columns %}
+                            <th class="text-end round-col border-start">{{ team.round_totals.get(round.key, 0) }}</th>
+                            {% endfor %}
+                            <th class="text-end total-col border-start">{{ team.team_total }}</th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-muted mb-0">No drafted players yet.</p>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+{% endif %}
+
+{% if can_edit_points %}
+<style>
+.point-cell {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-width: 3.5rem;
+}
+
+.row-point-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.fantasy-teams-table .round-col {
+    width: 3.35rem;
+    min-width: 3.35rem;
+    max-width: 3.35rem;
+    padding-left: 0.35rem;
+    padding-right: 0.35rem;
+}
+
+.fantasy-teams-table .total-col {
+    width: 4.1rem;
+    min-width: 4.1rem;
+    padding-left: 0.45rem;
+    padding-right: 0.45rem;
+}
+
+.point-display {
+    cursor: pointer;
+    border-bottom: 1px dashed transparent;
+}
+
+.point-display:hover {
+    border-bottom-color: currentColor;
+}
+</style>
+
+<script>
+(() => {
+    const tables = document.querySelectorAll('table[data-update-url]');
+    if (!tables.length) {
+        return;
+    }
+
+    function parsePointsValue(rawValue) {
+        const normalized = rawValue === null || rawValue === undefined ? '' : String(rawValue).trim();
+        if (!normalized.length) {
+            return null;
+        }
+
+        const parsed = Number(normalized);
+        if (!Number.isFinite(parsed)) {
+            return Number.NaN;
+        }
+
+        return parsed;
+    }
+
+    function displayValue(pointsValue) {
+        return pointsValue === null ? '_' : String(pointsValue);
+    }
+
+    function resetCell(cell) {
+        const original = parsePointsValue(cell.dataset.originalValue);
+        const input = cell.querySelector('.point-input');
+        const display = cell.querySelector('.point-display');
+        input.value = original === null ? '' : String(original);
+        display.textContent = displayValue(original);
+        input.classList.add('d-none');
+        display.classList.remove('d-none');
+    }
+
+    tables.forEach((table) => {
+        const updateUrl = table.dataset.updateUrl;
+
+        table.querySelectorAll('tr[data-player-row="true"]').forEach((row) => {
+            const rowActions = row.querySelector('.row-point-actions');
+            const rowConfirmBtn = row.querySelector('.row-point-confirm');
+            const rowCancelBtn = row.querySelector('.row-point-cancel');
+            const rowError = row.querySelector('.row-point-error');
+            const playerId = Number(row.dataset.playerId || 0);
+
+            const cells = row.querySelectorAll('.point-cell');
+
+            function dirtyCells() {
+                return Array.from(cells).filter((cell) => {
+                    const original = parsePointsValue(cell.dataset.originalValue);
+                    const input = cell.querySelector('.point-input');
+                    const current = parsePointsValue(input.value);
+                    return current !== original;
+                });
+            }
+
+            function syncRowState() {
+                if (!rowActions) {
+                    return;
+                }
+
+                const hasDirty = dirtyCells().length > 0;
+                if (hasDirty) {
+                    rowActions.classList.remove('d-none');
+                } else {
+                    rowActions.classList.add('d-none');
+                    if (rowError) {
+                        rowError.classList.add('d-none');
+                        rowError.textContent = '';
+                    }
+                }
+            }
+
+            function resetRow() {
+                cells.forEach((cell) => resetCell(cell));
+                syncRowState();
+            }
+
+            cells.forEach((cell) => {
+            const display = cell.querySelector('.point-display');
+            const input = cell.querySelector('.point-input');
+
+            function openEditor() {
+                display.classList.add('d-none');
+                input.classList.remove('d-none');
+                input.focus();
+                input.select();
+            }
+
+            display.addEventListener('click', openEditor);
+            cell.addEventListener('click', (event) => {
+                if (event.target.classList.contains('point-input')) {
+                    return;
+                }
+                openEditor();
+            });
+
+            input.addEventListener('input', () => {
+                syncRowState();
+            });
+
+            input.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') {
+                    resetCell(cell);
+                    syncRowState();
+                }
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    if (rowConfirmBtn && !rowConfirmBtn.classList.contains('disabled')) {
+                        rowConfirmBtn.click();
+                    }
+                }
+            });
+
+            input.addEventListener('blur', () => {
+                window.setTimeout(() => {
+                    if (document.activeElement !== rowConfirmBtn && document.activeElement !== rowCancelBtn) {
+                        const original = parsePointsValue(cell.dataset.originalValue);
+                        const current = parsePointsValue(input.value);
+                        if (current === original) {
+                            resetCell(cell);
+                            syncRowState();
+                        }
+                    }
+                }, 120);
+            });
+            });
+
+            if (rowCancelBtn) {
+                rowCancelBtn.addEventListener('click', () => {
+                    resetRow();
+                });
+            }
+
+            if (rowConfirmBtn) {
+                rowConfirmBtn.addEventListener('click', async () => {
+                    const changed = dirtyCells();
+                    if (!changed.length || !playerId) {
+                        return;
+                    }
+
+                    for (const cell of changed) {
+                        const input = cell.querySelector('.point-input');
+                        const points = parsePointsValue(input.value);
+                        if (
+                            Number.isNaN(points)
+                            || (points !== null && (!Number.isInteger(points) || points < 0))
+                        ) {
+                            if (rowError) {
+                                rowError.textContent = 'Points must be a whole number, zero or greater, or blank.';
+                                rowError.classList.remove('d-none');
+                            }
+                            return;
+                        }
+                    }
+
+                    rowConfirmBtn.classList.add('disabled');
+                    if (rowCancelBtn) {
+                        rowCancelBtn.classList.add('disabled');
+                    }
+                    if (rowError) {
+                        rowError.classList.add('d-none');
+                        rowError.textContent = '';
+                    }
+
+                    try {
+                        for (const cell of changed) {
+                            const input = cell.querySelector('.point-input');
+                            const points = parsePointsValue(input.value);
+                            const roundValue = Number(cell.dataset.roundValue || 0);
+
+                            const response = await fetch(updateUrl, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    player_id: playerId,
+                                    round_value: roundValue,
+                                    points,
+                                }),
+                            });
+
+                            const payload = await response.json();
+                            if (!response.ok || !payload.ok) {
+                                throw new Error(payload.error || 'Unable to save points.');
+                            }
+                        }
+
+                        window.location.reload();
+                    } catch (err) {
+                        if (rowError) {
+                            rowError.textContent = err.message || 'Unable to save points.';
+                            rowError.classList.remove('d-none');
+                        }
+                        rowConfirmBtn.classList.remove('disabled');
+                        if (rowCancelBtn) {
+                            rowCancelBtn.classList.remove('disabled');
+                        }
+                    }
+                });
+            }
+        });
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

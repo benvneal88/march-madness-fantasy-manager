@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card shadow-sm">
+    <div class="card-body">
+        <h1 class="h4">{{ page_title }}</h1>
+        {% if selected_draft %}
+        <p class="mb-2 text-muted">Current Draft: <strong>{{ selected_draft.name }} ({{ selected_draft.year }})</strong></p>
+        {% endif %}
+        <p class="mb-0">This page is scaffolded and ready for the next implementation step.</p>
+    </div>
+</div>
+{% endblock %}

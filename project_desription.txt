@@ -1,0 +1,50 @@
+i want to create a webapp. this web app is a sports fantasy manager for college basketball march madness tournament. 
+fantasy team's will draft individual march madness basketball players, and the points that the player scores in the tournament will be how many points the fantasy team gets.
+
+
+technical requirements:
+use docker compose to create a reverse proxy, webapp, and database container services
+
+python with flask framework
+sqlalchemy as orm
+postgresql db backend
+nginx reverse proxy
+
+other specs:
+create secrets in .env.example file
+
+
+database schema:
+- one main database holding app level data
+tables:
+  - drafts (a table with a single row with the settings for this draft instance so users can select the instance from other instances.)
+    - drafts columns: [id, name, slug, year, is_active, database_name]
+
+- one database per draft
+tables: 
+  - tbl_teams : basketball teams
+  - tbl_players : basketball players on teams
+  - tbl_player_points : the points a player scored in a tournament round. columns: [player_id, tournament_round (int), points]
+  - tbl_fantasy_teams : fantasy_teams
+  - tbl_fantasy_draft_events : connects a player to a fantasy_team. drafted at a particular draft round.
+  - tbl_owners : a user can be an owner of one or more fantasy_teams
+  - tbl_bracket : backet progression data
+  - tbl_stg_games : all tournament games between two teams staged from scraped data
+  - tbl_stg_box_scores : box score data staged from scrapped data
+
+
+webbapp logic: 
+- this webapp requires a login. there are 3 different shared accounts that can be used to login: viewer, editor, admin. viewer has read only access, editor had read only access but can update fantasy team's points from game results, admin has full edit access.
+
+Scraping - We'll need to scrape from some public sites to get rosters data, but don't implement for now. I have already implemented this with another tool and i'll bring over the funcionality later.
+
+UI layout:
+- the webapp will have a series of tabs for different functions:  "Leaderboard", "Fantasy Teams", "Team Rosters", "Bracket", "Draft Night", "Admin"
+- the webapp will have a login page with one of the 3 user roles (viewer, editor, admin), once logged in they must select a draft instance
+
+Leaderboard - Display the the point totals for all fantasy teams across each tournament round (round of 64, round of 32, sweet 16, elite 8, final 4, championship)
+Fantasy Teams - View fantasy team's drafted players, a table of the player point totals for the tournament. 
+Team Rosters - The college team rosters of all players. 4 vertical columns for the regions (east, west, south, midwest)
+Bracket - A view of the tournament progress across the regions and 
+Draft Night - A UI to input the draft selection on draft night. It will have a list of the fantasy teams as rows and draft rounds as columns, where each cell can be clicked on and a non-drafted player can be entered and selected.
+Admin - Allows the admin user the ability to: create new drafts. and to and change configuration of the drafts. available config: numbers of draft rounds, creating and removing fantasy teams, creating and removing owners, 

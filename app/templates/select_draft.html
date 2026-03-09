@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-7 col-lg-6">
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <h1 class="h4 mb-3">Select Draft Instance</h1>
+
+                {% if drafts %}
+                <form method="post">
+                    <input type="hidden" name="next" value="{{ next_path }}">
+                    <div class="mb-3">
+                        <label class="form-label" for="draft_id">Draft</label>
+                        <select id="draft_id" name="draft_id" class="form-select" required>
+                            {% for draft in drafts %}
+                            <option value="{{ draft.id }}" {% if selected_draft_id == draft.id %}selected{% endif %}>{{ draft.name }} ({{ draft.year }}) {% if draft.is_active %}- ACTIVE{% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" type="submit">Continue</button>
+                </form>
+                {% else %}
+                <p class="mb-0">No drafts exist yet. {% if session.get('role') == 'admin' %}Go to Admin to create one.{% else %}Please ask an admin to create a draft.{% endif %}</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

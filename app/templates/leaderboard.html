@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <h1 class="h4 mb-1">Leaderboard</h1>
+        <p class="mb-0 text-muted">{{ selected_draft.name }} ({{ selected_draft.year }})</p>
+    </div>
+</div>
+
+{% if not leaderboard_payload.rows %}
+<div class="alert alert-warning">No fantasy teams found for this draft.</div>
+{% else %}
+<div class="card shadow-sm">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-sm align-middle leaderboard-table mb-0">
+                <thead>
+                    <tr>
+                        <th class="rank-col">Rank</th>
+                        <th class="team-col">Fantasy Team</th>
+                        {% for round in leaderboard_payload.round_columns %}
+                        <th class="text-end round-col">{{ round.label }}</th>
+                        {% endfor %}
+                        <th class="text-end total-col">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in leaderboard_payload.rows %}
+                    <tr>
+                        <td class="fw-semibold rank-col">{{ loop.index }}</td>
+                        <td class="team-col">
+                            <span class="fw-semibold">{{ row.team_name }}</span>
+                            {% if row.draft_position %}
+                            <span class="text-muted small">(Draft #{{ row.draft_position }})</span>
+                            {% endif %}
+                        </td>
+                        {% for round in leaderboard_payload.round_columns %}
+                        <td class="text-end round-col">{{ row.rounds.get(round.key, 0) }}</td>
+                        {% endfor %}
+                        <td class="text-end fw-bold total-col">{{ row.total }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<style>
+.leaderboard-table .rank-col {
+    width: 3.1rem;
+    min-width: 3.1rem;
+    padding-right: 0.35rem;
+}
+
+.leaderboard-table .team-col {
+    padding-left: 0.35rem;
+}
+
+.leaderboard-table .round-col {
+    width: 3.25rem;
+    min-width: 3.25rem;
+    padding-left: 0.35rem;
+    padding-right: 0.35rem;
+}
+
+.leaderboard-table .total-col {
+    width: 4rem;
+    min-width: 4rem;
+    padding-left: 0.35rem;
+    padding-right: 0.35rem;
+}
+</style>
+{% endblock %}

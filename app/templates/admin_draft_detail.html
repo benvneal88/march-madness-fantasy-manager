@@ -1,0 +1,202 @@
+{% extends "admin_base.html" %}
+
+{% block admin_content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="h5 mb-0">Draft Details</h2>
+    <span class="badge text-bg-primary">{{ selected_draft.name }} ({{ selected_draft.year }})</span>
+</div>
+
+<div class="row g-4">
+    <div class="col-12">
+        <div class="card shadow-sm border-warning-subtle">
+            <div class="card-body">
+                <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+                    <div>
+                        <h3 class="h6 mb-1">Draft Order</h3>
+                        <p class="text-muted mb-0">
+                            Status:
+                            {% if draft_order_locked %}
+                            <span class="badge text-bg-success">Locked In</span>
+                            {% else %}
+                            <span class="badge text-bg-warning">Not Locked</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2">
+                        <form method="post" action="{{ url_for('main.admin_seed_draft_data') }}">
+                            <input type="hidden" name="draft_id" value="{{ selected_draft.id }}">
+                            <button class="btn btn-outline-secondary btn-sm" type="submit">Seed Teams + Players</button>
+                        </form>
+                        <form method="post" action="{{ url_for('main.admin_randomize_draft_order') }}">
+                            <input type="hidden" name="draft_id" value="{{ selected_draft.id }}">
+                            <button class="btn btn-outline-primary btn-sm" type="submit" {% if draft_order_locked %}disabled{% endif %}>Randomize</button>
+                        </form>
+                        <form method="post" action="{{ url_for('main.admin_lock_draft_order') }}">
+                            <input type="hidden" name="draft_id" value="{{ selected_draft.id }}">
+                            <button class="btn btn-primary btn-sm" type="submit" {% if draft_order_locked %}disabled{% endif %}>Lock-In</button>
+                        </form>
+                    </div>
+                </div>
+
+                <hr>
+
+                <div class="row row-cols-1 row-cols-md-2 row-cols-lg-4 g-2">
+                    {% for team in fantasy_teams|sort(attribute='draft_position') %}
+                    <div class="col">
+                        <div class="border rounded p-2 h-100">
+                            <div class="small text-muted">Draft Position</div>
+                            <div class="fw-semibold">
+                                {% if team.draft_position %}
+                                #{{ team.draft_position }} - {{ team.name }}
+                                {% else %}
+                                TBD - {{ team.name }}
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="col-12 text-muted">No fantasy teams yet.</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h3 class="h6">Update Draft Configuration</h3>
+                <form method="post" action="{{ url_for('main.admin_update_draft') }}" class="row g-2">
+                    <input type="hidden" name="draft_id" value="{{ selected_draft.id }}">
+                    <div class="col-md-4">
+                        <label class="form-label">Draft Rounds</label>
+                        <input class="form-control" name="num_draft_rounds" type="number" min="1" value="{{ selected_draft.num_draft_rounds }}">
+                    </div>
+                    <div class="col-md-8 d-flex align-items-end">
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" name="is_active" id="is_active" {% if selected_draft.is_active %}checked{% endif %}>
+                            <label class="form-check-label" for="is_active">Mark this draft as active</label>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <button class="btn btn-outline-primary" type="submit">Save Config</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h3 class="h6">Draft Metadata</h3>
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item d-flex justify-content-between"><span>ID</span><span>{{ selected_draft.id }}</span></li>
+                    <li class="list-group-item d-flex justify-content-between"><span>Slug</span><span>{{ selected_draft.slug }}</span></li>
+                    <li class="list-group-item d-flex justify-content-between"><span>Database</span><span>{{ selected_draft.database_name }}</span></li>
+                    <li class="list-group-item d-flex justify-content-between"><span>Active</span><span>{% if selected_draft.is_active %}Yes{% else %}No{% endif %}</span></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h3 class="h6">Fantasy Teams</h3>
+                <form method="post" action="{{ url_for('main.admin_add_fantasy_team') }}" class="d-flex gap-2 mb-3">
+                    <input type="hidden" name="draft_id" value="{{ selected_draft.id }}">
+                    <input class="form-control" name="name" placeholder="New fantasy team" required>
+                    <button class="btn btn-success" type="submit">Add</button>
+                </form>
+                <ul class="list-group">
+                    {% for team in fantasy_teams %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span>
+                            {{ team.name }}
+                            {% if team.draft_position %}
+                            <span class="badge text-bg-light">#{{ team.draft_position }}</span>
+                            {% endif %}
+                        </span>
+                        <form method="post" action="{{ url_for('main.admin_delete_fantasy_team', team_id=team.id) }}">
+                            <input type="hidden" name="draft_id" value="{{ selected_draft.id }}">
+                            <button class="btn btn-sm btn-outline-danger" type="submit">Remove</button>
+                        </form>
+                    </li>
+                    {% else %}
+                    <li class="list-group-item text-muted">No fantasy teams yet.</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h3 class="h6">Owners</h3>
+                <form method="post" action="{{ url_for('main.admin_add_owner') }}" class="row g-2 mb-3">
+                    <input type="hidden" name="draft_id" value="{{ selected_draft.id }}">
+                    <div class="col-md-5">
+                        <input class="form-control" name="name" placeholder="Owner name" required>
+                    </div>
+                    <div class="col-md-5">
+                        <input class="form-control" name="email" type="email" placeholder="Owner email">
+                    </div>
+                    <div class="col-md-2 d-grid">
+                        <button class="btn btn-success" type="submit">Add</button>
+                    </div>
+                </form>
+                <ul class="list-group">
+                    {% for owner in owners %}
+                    <li class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-center gap-3">
+                            <div>
+                                <strong>{{ owner.name }}</strong>{% if owner.email %} ({{ owner.email }}){% endif %}
+                            </div>
+                            <form method="post" action="{{ url_for('main.admin_delete_owner', owner_id=owner.id) }}">
+                                <input type="hidden" name="draft_id" value="{{ selected_draft.id }}">
+                                <button class="btn btn-sm btn-outline-danger" type="submit">Remove</button>
+                            </form>
+                        </div>
+
+                        <div class="mt-2 d-flex flex-wrap gap-2">
+                            {% for assigned_team in owner.fantasy_teams %}
+                            <form method="post" action="{{ url_for('main.admin_unassign_owner_team') }}" class="d-inline-flex">
+                                <input type="hidden" name="draft_id" value="{{ selected_draft.id }}">
+                                <input type="hidden" name="owner_id" value="{{ owner.id }}">
+                                <input type="hidden" name="fantasy_team_id" value="{{ assigned_team.fantasy_team_id }}">
+                                <button class="btn btn-sm btn-outline-secondary" type="submit">{{ assigned_team.fantasy_team_name }} ×</button>
+                            </form>
+                            {% endfor %}
+                            {% if not owner.fantasy_teams %}
+                            <span class="text-muted small">No fantasy teams assigned.</span>
+                            {% endif %}
+                        </div>
+
+                        {% if fantasy_teams %}
+                        <form method="post" action="{{ url_for('main.admin_assign_owner_team') }}" class="row g-2 mt-2">
+                            <input type="hidden" name="draft_id" value="{{ selected_draft.id }}">
+                            <input type="hidden" name="owner_id" value="{{ owner.id }}">
+                            <div class="col-md-8">
+                                <select class="form-select form-select-sm" name="fantasy_team_id" required>
+                                    {% for team in fantasy_teams %}
+                                    <option value="{{ team.id }}">{{ team.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-4 d-grid">
+                                <button class="btn btn-sm btn-outline-primary" type="submit">Assign Team</button>
+                            </div>
+                        </form>
+                        {% endif %}
+                    </li>
+                    {% else %}
+                    <li class="list-group-item text-muted">No owners yet.</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

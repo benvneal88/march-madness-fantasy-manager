@@ -1,0 +1,415 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card shadow-sm mb-4">
+    <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+            <h1 class="h4 mb-1">Draft Night</h1>
+            <p class="mb-0 text-muted">{{ selected_draft.name }} ({{ selected_draft.year }})</p>
+        </div>
+        <div>
+            {% if draft_payload.draft_order_locked %}
+            <span class="badge text-bg-success">Draft Order Locked</span>
+            {% else %}
+            <span class="badge text-bg-warning">Draft Order Not Locked</span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% if not draft_payload.teams %}
+<div class="alert alert-warning">No fantasy teams found for this draft.</div>
+{% elif not draft_payload.next_pick and draft_payload.draft_order_locked %}
+<div class="alert alert-success">Draft complete.</div>
+{% elif not draft_payload.next_pick %}
+<div class="alert alert-warning">Set draft order in Admin before drafting.</div>
+{% endif %}
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        {% if draft_payload.next_pick %}
+        <p class="mb-3">
+            <strong>On The Clock:</strong>
+            Pick #{{ draft_payload.next_pick.pick_number }}
+            (Round {{ draft_payload.next_pick.draft_round }})
+            {% for team in draft_payload.teams %}
+                {% if team.id == draft_payload.next_pick.fantasy_team_id %}
+                - {{ team.name }}
+                {% endif %}
+            {% endfor %}
+            <span class="ms-3 badge text-bg-secondary" id="elapsedTimer" data-elapsed-seconds="{{ draft_payload.elapsed_since_last_pick_seconds }}">Elapsed: 00:00</span>
+        </p>
+
+        <div class="alert alert-info d-none" id="topDraftConfirmBar" role="alert">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <div id="topDraftConfirmText"></div>
+                <button class="btn btn-success btn-sm" type="submit" form="draftPickForm" id="confirmDraftBtn" disabled>Confirm Draft Pick</button>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered align-middle text-center">
+                <thead>
+                    <tr>
+                        <th class="text-start">Fantasy Team</th>
+                        {% for round in draft_payload.rounds %}
+                        <th>R{{ round }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for team in draft_payload.teams %}
+                    <tr>
+                        <th class="text-start">{{ team.name }}</th>
+                        {% for round in draft_payload.rounds %}
+                            {% set key = team.id|string + ':' + round|string %}
+                            {% set slot = draft_payload.board.get(key) %}
+                            {% set is_next_pick = draft_payload.next_pick and draft_payload.next_pick.fantasy_team_id == team.id and draft_payload.next_pick.draft_round == round %}
+                            <td>
+                                {% if slot and slot.player_name %}
+                                <div class="small fw-semibold">{{ slot.player_name }}</div>
+                                <div class="small text-muted">{{ slot.player_team_name }}</div>
+                                {% elif is_next_pick and draft_payload.draft_order_locked %}
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-primary js-pick-cell"
+                                    data-team-id="{{ team.id }}"
+                                    data-team-name="{{ team.name }}"
+                                    data-round="{{ round }}"
+                                    data-pick="{{ slot.pick_number if slot else '' }}"
+                                >
+                                    Pick #{{ slot.pick_number if slot else '' }}
+                                </button>
+                                {% elif slot %}
+                                <span class="text-muted small">Pick #{{ slot.pick_number }}</span>
+                                {% else %}
+                                <span class="text-muted small">-</span>
+                                {% endif %}
+                            </td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm" id="draftPickCard" {% if not (draft_payload.next_pick and draft_payload.draft_order_locked) %}style="display:none"{% endif %}>
+    <div class="card-body">
+        <h2 class="h6 mb-3">Draft Player</h2>
+        <form method="post" action="{{ url_for('main.draft_night_draft_player') }}" id="draftPickForm">
+            <input type="hidden" name="fantasy_team_id" id="pickTeamId">
+            <input type="hidden" name="player_id" id="pickPlayerId">
+
+            <div class="mb-3">
+                <label class="form-label" for="playerSearchInput">Player Name Search</label>
+                <input class="form-control" id="playerSearchInput" type="text" placeholder="Type at least 2 characters" autocomplete="off">
+            </div>
+
+            <div id="playerSearchResults" class="list-group mb-3"></div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm mt-4">
+    <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <h2 class="h6 mb-0">Team Rosters</h2>
+            <form method="get" action="{{ url_for('main.draft_night') }}" class="d-flex align-items-center gap-2">
+                <label class="form-label mb-0" for="min_ppg">Min PPG</label>
+                <input
+                    id="min_ppg"
+                    name="min_ppg"
+                    type="number"
+                    class="form-control form-control-sm"
+                    min="0"
+                    step="0.1"
+                    value="{{ '%.1f'|format(roster_payload.min_ppg) }}"
+                    style="width: 110px"
+                >
+                <button class="btn btn-sm btn-outline-primary" type="submit">Apply</button>
+            </form>
+        </div>
+
+        {% if not roster_payload.regions or not roster_payload.rows %}
+        <p class="text-muted mb-0">No roster data available yet. Use the seed button in Admin or load team/player data.</p>
+        {% else %}
+        <div class="table-responsive">
+            <table class="table table-sm table-borderless align-top roster-table mb-0">
+                <thead>
+                    <tr>
+                        <th class="roster-seed-header" style="width: 90px">Seed</th>
+                        {% for region in roster_payload.regions %}
+                        <th class="roster-region-header">{{ region }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for seed_row in roster_payload.rows %}
+                    <tr class="roster-seed-row">
+                        <th class="text-center roster-seed-value">{{ seed_row.seed }}</th>
+                        {% for region in roster_payload.regions %}
+                        <td>
+                            {% set team_slot = seed_row.regions.get(region) %}
+                            {% if team_slot %}
+                            <div class="fw-semibold mb-1">{{ team_slot.team_name }}</div>
+                            {% if team_slot.players %}
+                            <ul class="list-unstyled mb-0 small">
+                                {% for player in team_slot.players %}
+                                <li
+                                    class="roster-player-row {% if player.is_drafted %}roster-player-drafted{% else %}roster-player-clickable js-roster-player-pick{% endif %}"
+                                    {% if not player.is_drafted %}
+                                    data-player-id="{{ player.player_id }}"
+                                    data-player-name="{{ player.name }}"
+                                    data-player-team="{{ team_slot.team_name }}"
+                                    {% endif %}
+                                >
+                                    <span class="roster-player-name">{{ player.name }} ({{ player.position }})</span>
+                                    <span class="roster-player-ppg">{{ '%.1f'|format(player.ppg) }} PPG</span>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                            {% else %}
+                            <span class="text-muted small">No players match current PPG filter.</span>
+                            {% endif %}
+                            {% else %}
+                            <span class="text-muted small">-</span>
+                            {% endif %}
+                        </td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+.roster-table,
+.roster-table th,
+.roster-table td {
+    border: none !important;
+}
+
+.roster-table th,
+.roster-table td {
+    padding-left: 1rem;
+    padding-right: 1rem;
+}
+
+.roster-seed-row th,
+.roster-seed-row td {
+    padding-top: 0.85rem;
+    padding-bottom: 0.85rem;
+}
+
+.roster-seed-row + .roster-seed-row th,
+.roster-seed-row + .roster-seed-row td {
+    border-top: 1px solid var(--bs-border-color-translucent) !important;
+}
+
+.roster-region-header,
+.roster-seed-header,
+.roster-seed-value {
+    font-size: 1rem;
+}
+
+.roster-seed-header,
+.roster-seed-value {
+    font-weight: 700;
+}
+
+.roster-player-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.75rem;
+}
+
+.roster-player-name {
+    text-align: left;
+}
+
+.roster-player-ppg {
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.roster-player-drafted {
+    text-decoration: line-through;
+    opacity: 0.75;
+}
+
+.roster-player-clickable {
+    cursor: pointer;
+    border-radius: 0.3rem;
+    padding: 0.1rem 0.25rem;
+}
+
+.roster-player-clickable:hover {
+    background: rgba(127, 127, 127, 0.12);
+}
+</style>
+
+<script>
+(() => {
+    const elapsedTimer = document.getElementById('elapsedTimer');
+
+    function formatElapsed(totalSeconds) {
+        const safeSeconds = Math.max(0, Number(totalSeconds) || 0);
+        const hours = Math.floor(safeSeconds / 3600);
+        const minutes = Math.floor((safeSeconds % 3600) / 60);
+        const seconds = safeSeconds % 60;
+        if (hours > 0) {
+            return `Elapsed: ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+        return `Elapsed: ${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+
+    if (elapsedTimer) {
+        let elapsedSeconds = Number(elapsedTimer.dataset.elapsedSeconds || 0);
+        elapsedTimer.textContent = formatElapsed(elapsedSeconds);
+        window.setInterval(() => {
+            elapsedSeconds += 1;
+            elapsedTimer.textContent = formatElapsed(elapsedSeconds);
+        }, 1000);
+    }
+
+    const pickCard = document.getElementById('draftPickCard');
+    const teamIdInput = document.getElementById('pickTeamId');
+    const playerIdInput = document.getElementById('pickPlayerId');
+    const topDraftConfirmBar = document.getElementById('topDraftConfirmBar');
+    const topDraftConfirmText = document.getElementById('topDraftConfirmText');
+    const playerSearchInput = document.getElementById('playerSearchInput');
+    const playerResults = document.getElementById('playerSearchResults');
+    const confirmDraftBtn = document.getElementById('confirmDraftBtn');
+
+    let selectedCell = null;
+    let currentPick = null;
+    let selectedPlayer = null;
+
+    function updateTopConfirm() {
+        if (!topDraftConfirmBar || !topDraftConfirmText || !confirmDraftBtn) {
+            return;
+        }
+
+        if (currentPick && selectedPlayer) {
+            topDraftConfirmText.textContent = `For the #${currentPick.pick} pick ${currentPick.teamName} selects ${selectedPlayer.name} from ${selectedPlayer.teamName}.`;
+            topDraftConfirmBar.classList.remove('d-none');
+            confirmDraftBtn.disabled = false;
+            return;
+        }
+
+        topDraftConfirmText.textContent = '';
+        topDraftConfirmBar.classList.add('d-none');
+        confirmDraftBtn.disabled = true;
+    }
+
+    function clearResults() {
+        playerResults.innerHTML = '';
+        playerIdInput.value = '';
+        selectedPlayer = null;
+        updateTopConfirm();
+    }
+
+    function setSelectedPlayer(playerId, name, teamName) {
+        playerIdInput.value = String(playerId);
+        selectedPlayer = { id: Number(playerId), name, teamName };
+        updateTopConfirm();
+
+        const badges = playerResults.querySelectorAll('.list-group-item');
+        badges.forEach((el) => el.classList.remove('active'));
+
+        const selected = playerResults.querySelector(`[data-player-id="${playerId}"]`);
+        if (selected) {
+            selected.classList.add('active');
+        }
+    }
+
+    async function searchPlayers(query) {
+        if (!query || query.length < 2) {
+            clearResults();
+            return;
+        }
+
+        const response = await fetch(`{{ url_for('main.draft_night_player_search') }}?q=${encodeURIComponent(query)}`);
+        const players = await response.json();
+
+        playerResults.innerHTML = '';
+        playerIdInput.value = '';
+        confirmDraftBtn.disabled = true;
+
+        if (!players.length) {
+            const empty = document.createElement('div');
+            empty.className = 'text-muted small';
+            empty.textContent = 'No available players found.';
+            playerResults.appendChild(empty);
+            return;
+        }
+
+        for (const player of players) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'list-group-item list-group-item-action';
+            button.dataset.playerId = String(player.id);
+            const playerName = `${player.first_name} ${player.last_name}`;
+            const label = `${playerName} (${player.team_name})`;
+            button.textContent = label;
+            button.addEventListener('click', () => setSelectedPlayer(player.id, playerName, player.team_name));
+            playerResults.appendChild(button);
+        }
+    }
+
+    document.querySelectorAll('.js-pick-cell').forEach((button) => {
+        button.addEventListener('click', () => {
+            selectedCell = button;
+            currentPick = {
+                pick: button.dataset.pick,
+                teamName: button.dataset.teamName,
+                round: button.dataset.round,
+            };
+            teamIdInput.value = button.dataset.teamId;
+            playerSearchInput.value = '';
+            clearResults();
+            pickCard.style.display = '';
+            playerSearchInput.focus();
+        });
+    });
+
+    document.querySelectorAll('.js-roster-player-pick').forEach((row) => {
+        row.addEventListener('click', () => {
+            if (!teamIdInput.value) {
+                pickCard.style.display = '';
+                playerSearchInput.focus();
+                return;
+            }
+
+            const playerId = Number(row.dataset.playerId || 0);
+            const playerName = row.dataset.playerName || '';
+            const teamName = row.dataset.playerTeam || '';
+            if (!playerId) {
+                return;
+            }
+
+            setSelectedPlayer(playerId, playerName, teamName);
+            pickCard.style.display = '';
+        });
+    });
+
+    playerSearchInput.addEventListener('input', (event) => {
+        searchPlayers(event.target.value.trim());
+    });
+
+    document.getElementById('draftPickForm').addEventListener('submit', (event) => {
+        if (!teamIdInput.value || !playerIdInput.value) {
+            event.preventDefault();
+        }
+    });
+})();
+</script>
+{% endblock %}

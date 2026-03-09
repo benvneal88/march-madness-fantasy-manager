@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h4 mb-0">Admin</h1>
+</div>
+
+<ul class="nav nav-pills mb-4">
+    <li class="nav-item">
+        <a class="nav-link {% if active_admin_tab == 'drafts' %}active{% endif %}" href="{{ url_for('main.admin_drafts') }}">Drafts</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_admin_tab == 'create-draft' %}active{% endif %}" href="{{ url_for('main.admin_create_draft') }}">Create Draft</a>
+    </li>
+</ul>
+
+{% block admin_content %}{% endblock %}
+{% endblock %}

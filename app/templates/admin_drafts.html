@@ -1,0 +1,41 @@
+{% extends "admin_base.html" %}
+
+{% block admin_content %}
+<div class="card shadow-sm">
+    <div class="card-body">
+        <h2 class="h6 mb-3">All Drafts</h2>
+        {% if drafts %}
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Year</th>
+                    <th>Slug</th>
+                    <th>DB Name</th>
+                    <th>Rounds</th>
+                    <th>Active</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for draft in drafts %}
+                <tr>
+                    <td>{{ draft.id }}</td>
+                    <td><a href="{{ url_for('main.admin_draft_detail', draft_id=draft.id) }}">{{ draft.name }}</a></td>
+                    <td>{{ draft.year }}</td>
+                    <td>{{ draft.slug }}</td>
+                    <td>{{ draft.database_name }}</td>
+                    <td>{{ draft.num_draft_rounds }}</td>
+                    <td>{% if draft.is_active %}<span class="badge text-bg-success">Yes</span>{% else %}<span class="badge text-bg-secondary">No</span>{% endif %}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="mb-0">No drafts yet. Use <strong>Create Draft</strong> to add your first one.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

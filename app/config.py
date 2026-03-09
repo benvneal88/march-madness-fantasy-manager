@@ -1,0 +1,11 @@
+import os
+
+
+class Config:
+    SECRET_KEY = os.getenv("SECRET_KEY")
+    SQLALCHEMY_DATABASE_URI = os.getenv("SQLALCHEMY_DATABASE_URI")
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    VIEWER_PASSWORD = os.getenv("VIEWER_PASSWORD")
+    EDITOR_PASSWORD = os.getenv("EDITOR_PASSWORD")
+    ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")

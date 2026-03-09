@@ -1,0 +1,30 @@
+{% extends "admin_base.html" %}
+
+{% block admin_content %}
+<div class="row">
+    <div class="col-lg-7">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h2 class="h6 mb-3">Create New Draft</h2>
+                <form method="post" action="{{ url_for('main.admin_create_draft') }}" class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Draft Name</label>
+                        <input class="form-control" name="name" placeholder="Draft name" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Year</label>
+                        <input class="form-control" name="year" type="number" min="2000" max="2100" value="2026" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Draft Rounds</label>
+                        <input class="form-control" name="num_draft_rounds" type="number" min="1" value="12" required>
+                    </div>
+                    <div class="col-12">
+                        <button class="btn btn-primary" type="submit">Create Draft</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
