@@ -23,10 +23,6 @@
                         </p>
                     </div>
                     <div class="d-flex flex-wrap gap-2">
-                        <form method="post" action="{{ url_for('main.admin_seed_draft_data') }}">
-                            <input type="hidden" name="draft_id" value="{{ selected_draft.id }}">
-                            <button class="btn btn-outline-secondary btn-sm" type="submit">Seed Teams + Players</button>
-                        </form>
                         <form method="post" action="{{ url_for('main.admin_randomize_draft_order') }}">
                             <input type="hidden" name="draft_id" value="{{ selected_draft.id }}">
                             <button class="btn btn-outline-primary btn-sm" type="submit" {% if draft_order_locked %}disabled{% endif %}>Randomize</button>
@@ -92,6 +88,8 @@
                 <h3 class="h6">Draft Metadata</h3>
                 <ul class="list-group list-group-flush">
                     <li class="list-group-item d-flex justify-content-between"><span>ID</span><span>{{ selected_draft.id }}</span></li>
+                    <li class="list-group-item d-flex justify-content-between"><span>Name</span><span>{{ selected_draft.name }}</span></li>
+                    <li class="list-group-item d-flex justify-content-between"><span>Year</span><span>{{ selected_draft.year }}</span></li>
                     <li class="list-group-item d-flex justify-content-between"><span>Slug</span><span>{{ selected_draft.slug }}</span></li>
                     <li class="list-group-item d-flex justify-content-between"><span>Database</span><span>{{ selected_draft.database_name }}</span></li>
                     <li class="list-group-item d-flex justify-content-between"><span>Active</span><span>{% if selected_draft.is_active %}Yes{% else %}No{% endif %}</span></li>

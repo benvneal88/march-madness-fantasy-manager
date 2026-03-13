@@ -37,10 +37,12 @@ from app.app import (
 from app.extensions import db
 from app.models import Draft
 from app.models.draft import (
+    build_draft_database_url,
     create_draft_database,
     create_draft_schema,
-    seed_dummy_teams_and_players,
+    seed_teams_from_csv,
 )
+from app.integrations.sportsreference import fetch_rosters_for_teams
 
 
 main_bp = Blueprint("main", __name__)
@@ -539,26 +541,6 @@ def admin_lock_draft_order():
     return redirect(url_for("main.admin_draft_detail", draft_id=selected_draft.id))
 
 
-@main_bp.post("/admin/seed-draft-data")
-@login_required
-@role_required("admin")
-def admin_seed_draft_data():
-    selected_draft = _draft_from_form_or_session()
-    if not selected_draft:
-        flash("Select a draft first.", "danger")
-        return redirect(url_for("main.select_draft"))
-
-    result = seed_dummy_teams_and_players(
-        current_app.config["SQLALCHEMY_DATABASE_URI"],
-        selected_draft.database_name,
-    )
-    flash(
-        f"Seed complete. Teams inserted: {result['teams']}, players inserted: {result['players']}.",
-        "info",
-    )
-    return redirect(url_for("main.admin_draft_detail", draft_id=selected_draft.id))
-
-
 @main_bp.route("/admin/create-draft", methods=["GET", "POST"])
 @login_required
 @role_required("admin")
@@ -595,6 +577,18 @@ def admin_create_draft():
 
     create_draft_database(current_app.config["SQLALCHEMY_DATABASE_URI"], database_name)
     create_draft_schema(current_app.config["SQLALCHEMY_DATABASE_URI"], database_name)
+    seed_result = seed_teams_from_csv(current_app.config["SQLALCHEMY_DATABASE_URI"], database_name, year)
+
+    if seed_result["inserted"] > 0:
+        draft_db_url = build_draft_database_url(
+            current_app.config["SQLALCHEMY_DATABASE_URI"], database_name
+        )
+        unmatched = fetch_rosters_for_teams(draft_db_url, seed_result["team_names"], year)
+        for team_name in unmatched:
+            flash(
+                f"Could not match '{team_name}' to a sports-reference school — roster not loaded.",
+                "warning",
+            )
 
     session["selected_draft_id"] = draft.id
     flash(f"Draft '{draft.name}' created and selected.", "success")

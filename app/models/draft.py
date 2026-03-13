@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json
+import csv
 import re
 from pathlib import Path
 
@@ -14,6 +14,7 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
+    Text,
     create_engine,
     text,
 )
@@ -136,6 +137,38 @@ tbl_bracket = Table(
 )
 
 
+tbl_sportsref_school_index = Table(
+    "tbl_sportsref_school_index",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("school_name", String(200), nullable=False),
+    Column("url", String(500), nullable=True),
+    Column("season_year", Integer, nullable=False),
+    Column("scraped_at", DateTime, nullable=False),
+)
+
+tbl_sportsref_school_roster = Table(
+    "tbl_sportsref_school_roster",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("school_name", String(200), nullable=False),
+    Column("season_year", Integer, nullable=False),
+    Column("jersey_number", String(10), nullable=True),
+    Column("first_name", String(100), nullable=True),
+    Column("last_name", String(100), nullable=True),
+    Column("position", String(30), nullable=True),
+    Column("class_year", String(20), nullable=True),
+    Column("height", String(20), nullable=True),
+    Column("weight", String(20), nullable=True),
+    Column("hometown", Text, nullable=True),
+    Column("nation", String(100), nullable=True),
+    Column("ppg", Float, nullable=True),
+    Column("rpg", Float, nullable=True),
+    Column("apg", Float, nullable=True),
+    Column("scraped_at", DateTime, nullable=False),
+)
+
+
 def _sanitize_database_name(database_name: str) -> str:
     if not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_]{1,62}", database_name):
         raise ValueError("Invalid database name format")
@@ -176,84 +209,46 @@ def create_draft_schema(main_db_url: str, database_name: str) -> None:
     draft_engine.dispose()
 
 
-def seed_dummy_teams_and_players(main_db_url: str, database_name: str) -> dict[str, int]:
+def seed_teams_from_csv(main_db_url: str, database_name: str, year: int) -> dict:
+    """Load tbl_teams from app/models/seeds/{year}_seeds.csv.
+
+    Only inserts if tbl_teams is empty.
+    Returns {"inserted": int, "team_names": list[str]}.
+    Silently skips if the CSV file does not exist.
+    """
+    csv_path = Path(__file__).parent / "seeds" / f"{year}_seeds.csv"
+    if not csv_path.exists():
+        return {"inserted": 0, "team_names": []}
+
     draft_url = build_draft_database_url(main_db_url, database_name)
     engine = create_engine(draft_url)
+    inserted = 0
 
-    seed_rosters_path = Path(__file__).with_name("seeds_team_rosters.json")
-    with seed_rosters_path.open("r", encoding="utf-8") as fh:
-        seed_rosters_payload = json.load(fh)
-    seeded_teams: list[dict[str, object]] = seed_rosters_payload.get("teams", [])
-
-    inserted_teams = 0
-    inserted_players = 0
+    with csv_path.open(newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        rows = [
+            {
+                "name": row["name"].strip(),
+                "seed": int(row["seed"]),
+                "region": row["region"].strip(),
+            }
+            for row in reader
+            if row.get("name", "").strip()
+        ]
 
     with engine.begin() as conn:
         team_count = conn.execute(text("SELECT COUNT(*) FROM tbl_teams")).scalar_one()
-        player_count = conn.execute(text("SELECT COUNT(*) FROM tbl_players")).scalar_one()
-
         if team_count == 0:
-            for team in seeded_teams:
+            for row in rows:
                 conn.execute(
                     text(
-                        """
-                        INSERT INTO tbl_teams (name, region, seed)
-                        VALUES (:name, :region, :seed)
-                        """
+                        "INSERT INTO tbl_teams (name, seed, region) "
+                        "VALUES (:name, :seed, :region)"
                     ),
-                    {
-                        "name": str(team["name"]),
-                        "region": str(team["region"]),
-                        "seed": int(team["seed"]),
-                    },
+                    row,
                 )
-                inserted_teams += 1
-
-        if player_count == 0 and seeded_teams:
-            team_rows = conn.execute(text("SELECT id, name FROM tbl_teams")).mappings().all()
-            team_id_by_name = {str(row["name"]): int(row["id"]) for row in team_rows}
-
-            for team in seeded_teams:
-                team_name = str(team["name"])
-                team_id = team_id_by_name.get(team_name)
-                if not team_id:
-                    continue
-
-                players = team.get("players", [])
-                for idx, player in enumerate(players):
-                    conn.execute(
-                        text(
-                            """
-                            INSERT INTO tbl_players (
-                                team_id,
-                                first_name,
-                                last_name,
-                                position,
-                                ppg,
-                                jersey_number,
-                                is_eliminated
-                            )
-                            VALUES (
-                                :team_id,
-                                :first_name,
-                                :last_name,
-                                :position,
-                                :ppg,
-                                :jersey_number,
-                                false
-                            )
-                            """
-                        ),
-                        {
-                            "team_id": team_id,
-                            "first_name": str(player["first_name"]),
-                            "last_name": str(player["last_name"]),
-                            "position": str(player["position"]),
-                            "ppg": float(player["ppg"]),
-                            "jersey_number": idx + 1,
-                        },
-                    )
-                    inserted_players += 1
+                inserted += 1
 
     engine.dispose()
-    return {"teams": inserted_teams, "players": inserted_players}
+    team_names = [r["name"] for r in rows] if inserted > 0 else []
+    return {"inserted": inserted, "team_names": team_names}
