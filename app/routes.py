@@ -24,6 +24,8 @@ from app.app import (
     get_draft_night_payload,
     get_fantasy_teams_payload,
     get_leaderboard_payload,
+    get_player_detail,
+    get_rosters_payload,
     get_team_roster_payload,
     lock_draft_order,
     randomize_draft_order,
@@ -31,6 +33,7 @@ from app.app import (
     remove_owner,
     search_available_players,
     set_player_elimination_status,
+    set_player_injured_status,
     update_player_round_points,
     unassign_owner_from_fantasy_team,
 )
@@ -40,6 +43,7 @@ from app.models.draft import (
     build_draft_database_url,
     create_draft_database,
     create_draft_schema,
+    populate_players_from_sportsref_roster,
     seed_teams_from_csv,
 )
 from app.integrations.sportsreference import fetch_rosters_for_teams
@@ -360,7 +364,90 @@ def fantasy_teams_toggle_eliminated():
 @login_required
 @draft_required
 def team_rosters():
-    return redirect(url_for("main.draft_night"))
+    selected_draft = _selected_draft()
+    payload = get_rosters_payload(
+        current_app.config["SQLALCHEMY_DATABASE_URI"],
+        selected_draft.database_name,
+    )
+    return render_template(
+        "rosters.html",
+        page_title="Rosters",
+        selected_draft=selected_draft,
+        rosters_payload=payload,
+    )
+
+
+@main_bp.route("/player/<int:player_id>")
+@login_required
+@draft_required
+def player_detail(player_id: int):
+    selected_draft = _selected_draft()
+    player = get_player_detail(
+        current_app.config["SQLALCHEMY_DATABASE_URI"],
+        selected_draft.database_name,
+        player_id,
+    )
+    if not player:
+        flash("Player not found.", "danger")
+        return redirect(url_for("main.team_rosters"))
+    return render_template(
+        "player.html",
+        page_title=f"{player['first_name']} {player['last_name']}",
+        selected_draft=selected_draft,
+        player=player,
+    )
+
+
+@main_bp.post("/player/<int:player_id>/toggle-injured")
+@login_required
+@draft_required
+def player_toggle_injured(player_id: int):
+    if session.get("role") not in {"admin", "editor"}:
+        flash("You do not have permission to update injury status.", "danger")
+        return redirect(url_for("main.player_detail", player_id=player_id))
+
+    selected_draft = _selected_draft()
+    target_state = request.form.get("is_injured", "").strip().lower() == "true"
+
+    try:
+        new_state = set_player_injured_status(
+            current_app.config["SQLALCHEMY_DATABASE_URI"],
+            selected_draft.database_name,
+            player_id,
+            target_state,
+        )
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("main.player_detail", player_id=player_id))
+
+    flash("Player marked as injured." if new_state else "Player marked as healthy.", "info" if new_state else "success")
+    return redirect(url_for("main.player_detail", player_id=player_id))
+
+
+@main_bp.post("/player/<int:player_id>/toggle-eliminated")
+@login_required
+@draft_required
+def player_toggle_eliminated(player_id: int):
+    if session.get("role") not in {"admin", "editor"}:
+        flash("You do not have permission to update elimination status.", "danger")
+        return redirect(url_for("main.player_detail", player_id=player_id))
+
+    selected_draft = _selected_draft()
+    target_state = request.form.get("is_eliminated", "").strip().lower() == "true"
+
+    try:
+        new_state = set_player_elimination_status(
+            current_app.config["SQLALCHEMY_DATABASE_URI"],
+            selected_draft.database_name,
+            player_id,
+            target_state,
+        )
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("main.player_detail", player_id=player_id))
+
+    flash("Player marked as eliminated." if new_state else "Player marked as active.", "warning" if new_state else "success")
+    return redirect(url_for("main.player_detail", player_id=player_id))
 
 
 @main_bp.route("/bracket")
@@ -577,21 +664,53 @@ def admin_create_draft():
 
     create_draft_database(current_app.config["SQLALCHEMY_DATABASE_URI"], database_name)
     create_draft_schema(current_app.config["SQLALCHEMY_DATABASE_URI"], database_name)
-    seed_result = seed_teams_from_csv(current_app.config["SQLALCHEMY_DATABASE_URI"], database_name, year)
-
-    if seed_result["inserted"] > 0:
-        draft_db_url = build_draft_database_url(
-            current_app.config["SQLALCHEMY_DATABASE_URI"], database_name
-        )
-        unmatched = fetch_rosters_for_teams(draft_db_url, seed_result["team_names"], year)
-        for team_name in unmatched:
-            flash(
-                f"Could not match '{team_name}' to a sports-reference school — roster not loaded.",
-                "warning",
-            )
+    seed_teams_from_csv(current_app.config["SQLALCHEMY_DATABASE_URI"], database_name, year)
 
     session["selected_draft_id"] = draft.id
     flash(f"Draft '{draft.name}' created and selected.", "success")
+    return redirect(url_for("main.admin_draft_detail", draft_id=draft.id))
+
+
+@main_bp.post("/admin/fetch-rosters/<int:draft_id>")
+@login_required
+@role_required("admin")
+def admin_fetch_rosters(draft_id: int):
+    draft = db.session.get(Draft, draft_id)
+    if not draft:
+        flash("Draft not found.", "danger")
+        return redirect(url_for("main.admin_drafts"))
+
+    draft_db_url = build_draft_database_url(
+        current_app.config["SQLALCHEMY_DATABASE_URI"], draft.database_name
+    )
+
+    from sqlalchemy import create_engine, text as sa_text
+    engine = create_engine(draft_db_url)
+    with engine.connect() as conn:
+        team_names = [
+            row[0] for row in conn.execute(sa_text("SELECT name FROM tbl_teams ORDER BY name"))
+        ]
+    engine.dispose()
+
+    if not team_names:
+        flash("No teams found in this draft — seed teams first.", "warning")
+        return redirect(url_for("main.admin_draft_detail", draft_id=draft.id))
+
+    unmatched = fetch_rosters_for_teams(draft_db_url, team_names, draft.year)
+    for team_name in unmatched:
+        flash(
+            f"Could not match '{team_name}' to a sports-reference school — roster not loaded.",
+            "warning",
+        )
+
+    players_inserted = populate_players_from_sportsref_roster(
+        current_app.config["SQLALCHEMY_DATABASE_URI"], draft.database_name, draft.year
+    )
+    if players_inserted:
+        flash(f"{players_inserted} players loaded into the draft.", "info")
+    else:
+        flash("Players already loaded or no roster data available.", "info")
+
     return redirect(url_for("main.admin_draft_detail", draft_id=draft.id))
 
 

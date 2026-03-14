@@ -41,8 +41,15 @@ tbl_players = Table(
     Column("last_name", String(80), nullable=False),
     Column("position", String(30), nullable=True),
     Column("ppg", Float, nullable=True),
+    Column("rpg", Float, nullable=True),
+    Column("apg", Float, nullable=True),
     Column("jersey_number", Integer, nullable=True),
+    Column("class_year", String(20), nullable=True),
+    Column("height", String(20), nullable=True),
+    Column("weight", String(20), nullable=True),
+    Column("hometown", Text, nullable=True),
     Column("is_eliminated", Boolean, nullable=False, default=False),
+    Column("is_injured", Boolean, nullable=False, default=False),
 )
 
 tbl_player_points = Table(
@@ -161,7 +168,6 @@ tbl_sportsref_school_roster = Table(
     Column("height", String(20), nullable=True),
     Column("weight", String(20), nullable=True),
     Column("hometown", Text, nullable=True),
-    Column("nation", String(100), nullable=True),
     Column("ppg", Float, nullable=True),
     Column("rpg", Float, nullable=True),
     Column("apg", Float, nullable=True),
@@ -252,3 +258,71 @@ def seed_teams_from_csv(main_db_url: str, database_name: str, year: int) -> dict
     engine.dispose()
     team_names = [r["name"] for r in rows] if inserted > 0 else []
     return {"inserted": inserted, "team_names": team_names}
+
+
+def populate_players_from_sportsref_roster(main_db_url: str, database_name: str, year: int) -> int:
+    """Copy player records from tbl_sportsref_school_roster into tbl_players.
+
+    Only runs when tbl_players is empty. Joins on tbl_teams.name == school_name.
+    Returns the number of player rows inserted.
+    """
+    draft_url = build_draft_database_url(main_db_url, database_name)
+    engine = create_engine(draft_url)
+    inserted = 0
+
+    with engine.begin() as conn:
+        player_count = conn.execute(text("SELECT COUNT(*) FROM tbl_players")).scalar_one()
+        if player_count > 0:
+            return 0
+
+        team_rows = conn.execute(
+            text("SELECT id, name FROM tbl_teams")
+        ).mappings().all()
+        team_id_by_name: dict[str, int] = {
+            row["name"].strip().lower(): row["id"] for row in team_rows
+        }
+
+        roster_rows = conn.execute(
+            text(
+                "SELECT school_name, first_name, last_name, position, "
+                "ppg, rpg, apg, jersey_number, class_year, height, weight, hometown "
+                "FROM tbl_sportsref_school_roster WHERE season_year = :year"
+            ),
+            {"year": year},
+        ).mappings().all()
+
+        for row in roster_rows:
+            team_id = team_id_by_name.get(row["school_name"].strip().lower())
+            if not team_id:
+                continue
+            try:
+                jersey = int(row["jersey_number"]) if row["jersey_number"] else None
+            except (ValueError, TypeError):
+                jersey = None
+            conn.execute(
+                text(
+                    "INSERT INTO tbl_players "
+                    "(team_id, first_name, last_name, position, ppg, rpg, apg, "
+                    "jersey_number, class_year, height, weight, hometown, is_eliminated) "
+                    "VALUES (:team_id, :first_name, :last_name, :position, :ppg, :rpg, :apg, "
+                    ":jersey_number, :class_year, :height, :weight, :hometown, false)"
+                ),
+                {
+                    "team_id": team_id,
+                    "first_name": row["first_name"] or "",
+                    "last_name": row["last_name"] or "",
+                    "position": row["position"],
+                    "ppg": row["ppg"],
+                    "rpg": row["rpg"],
+                    "apg": row["apg"],
+                    "jersey_number": jersey,
+                    "class_year": row["class_year"],
+                    "height": row["height"],
+                    "weight": row["weight"],
+                    "hometown": row["hometown"],
+                },
+            )
+            inserted += 1
+
+    engine.dispose()
+    return inserted

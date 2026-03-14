@@ -22,10 +22,10 @@ from app.models.draft import tbl_sportsref_school_index, tbl_sportsref_school_ro
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Rate limiter: 10 requests per minute (sliding window) for sports-reference.com
+# Rate limiter: 10 requests per 100 seconds (sliding window) for sports-reference.com
 # ---------------------------------------------------------------------------
 _RATE_LIMIT_REQUESTS = 10
-_RATE_LIMIT_WINDOW = 60  # seconds
+_RATE_LIMIT_WINDOW = 100  # seconds
 
 _rate_lock = threading.Lock()
 _request_timestamps: collections.deque[float] = collections.deque()
@@ -108,6 +108,14 @@ def _transform_school_list_raw(data_str: str) -> pandas.DataFrame:
                 pass
 
     schools_df["url"] = schools_df["School"].map(link_dict)
+    # Some cells have a suffix appended with a non-breaking space, e.g.
+    # "Alabama\xa0NCAA" — strip everything from the first \xa0 onward so the
+    # school name matches the link_dict key (anchor text only).
+    schools_df["School"] = (
+        schools_df["School"].astype(str).str.split("\xa0").str[0].str.strip()
+    )
+    # Re-apply the map with the normalised names
+    schools_df["url"] = schools_df["School"].map(link_dict)
     # Drop header rows that sport-reference.com repeats mid-table
     schools_df = schools_df[schools_df["School"] != "School"]
     schools_df = schools_df.dropna(subset=["School"])
@@ -123,7 +131,7 @@ def _transform_roster_raw(data_str: str, school_name: str) -> pandas.DataFrame:
     """Parse a school roster page and return a flattened DataFrame.
 
     Columns after transformation:
-        School, #, First Name, Last Name, Pos, Class, Ht, Wt, Hometown, Nation,
+        School, #, First Name, Last Name, Pos, Class, Ht, Wt, Hometown,
         PPG, RPG, APG
     """
 
@@ -188,7 +196,7 @@ _SCHOOL_INDEX_URL_TEMPLATE = (
 )
 
 
-def scrape_school_index(db_url: str, season_year: int = 2023) -> int:
+def scrape_school_index(db_url: str, season_year: int) -> int:
     """Download and parse the sports-reference schools index for *season_year*.
 
     Replaces any existing rows for that season in tbl_sportsref_school_index
@@ -238,7 +246,7 @@ def scrape_school_roster(
     school_url: str,
     school_name: str,
     db_url: str,
-    season_year: int = 2023,
+    season_year: int,
 ) -> int:
     """Download and parse a school's roster page from sports-reference.com.
 
@@ -318,7 +326,7 @@ def scrape_school_roster(
 def fetch_rosters_for_teams(
     db_url: str,
     team_names: list[str],
-    season_year: int = 2023,
+    season_year: int,
 ) -> list[str]:
     """Scrape the school index then fetch a roster for every team in *team_names*.
 

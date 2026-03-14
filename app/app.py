@@ -346,6 +346,132 @@ def set_player_elimination_status(
     return bool(row["is_eliminated"])
 
 
+def set_player_injured_status(
+    main_db_url: str,
+    database_name: str,
+    player_id: int,
+    is_injured: bool,
+) -> bool:
+    engine = _draft_engine(main_db_url, database_name)
+
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                UPDATE tbl_players
+                SET is_injured = :is_injured
+                WHERE id = :player_id
+                RETURNING is_injured
+                """
+            ),
+            {"player_id": player_id, "is_injured": is_injured},
+        ).mappings().one_or_none()
+
+        if not row:
+            raise ValueError("Player not found.")
+
+    engine.dispose()
+    return bool(row["is_injured"])
+
+
+def get_rosters_payload(main_db_url: str, database_name: str) -> dict[str, Any]:
+    engine = _draft_engine(main_db_url, database_name)
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT p.id, p.first_name, p.last_name, p.position, p.jersey_number,
+                       p.ppg, p.rpg, p.apg, p.class_year, p.height, p.weight,
+                       p.hometown, p.is_eliminated, p.is_injured,
+                       t.id AS team_id, t.name AS team_name, t.seed, t.region
+                FROM tbl_players p
+                INNER JOIN tbl_teams t ON t.id = p.team_id
+                ORDER BY t.region, t.seed, p.last_name, p.first_name
+                """
+            )
+        ).mappings().all()
+
+    engine.dispose()
+
+    teams: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        team_id = int(row["team_id"])
+        if team_id not in teams:
+            teams[team_id] = {
+                "team_id": team_id,
+                "team_name": row["team_name"],
+                "seed": row["seed"],
+                "region": row["region"],
+                "players": [],
+            }
+        teams[team_id]["players"].append(
+            {
+                "id": int(row["id"]),
+                "first_name": row["first_name"],
+                "last_name": row["last_name"],
+                "position": row["position"],
+                "jersey_number": row["jersey_number"],
+                "ppg": row["ppg"],
+                "rpg": row["rpg"],
+                "apg": row["apg"],
+                "class_year": row["class_year"],
+                "height": row["height"],
+                "weight": row["weight"],
+                "hometown": row["hometown"],
+                "is_eliminated": bool(row["is_eliminated"]),
+                "is_injured": bool(row["is_injured"]),
+            }
+        )
+
+    return {"teams": list(teams.values())}
+
+
+def get_player_detail(main_db_url: str, database_name: str, player_id: int) -> dict[str, Any] | None:
+    engine = _draft_engine(main_db_url, database_name)
+
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT p.id, p.first_name, p.last_name, p.position, p.jersey_number,
+                       p.ppg, p.rpg, p.apg, p.class_year, p.height, p.weight,
+                       p.hometown, p.is_eliminated, p.is_injured,
+                       t.name AS team_name, t.seed, t.region
+                FROM tbl_players p
+                INNER JOIN tbl_teams t ON t.id = p.team_id
+                WHERE p.id = :player_id
+                """
+            ),
+            {"player_id": player_id},
+        ).mappings().one_or_none()
+
+    engine.dispose()
+
+    if not row:
+        return None
+
+    return {
+        "id": int(row["id"]),
+        "first_name": row["first_name"],
+        "last_name": row["last_name"],
+        "position": row["position"],
+        "jersey_number": row["jersey_number"],
+        "ppg": row["ppg"],
+        "rpg": row["rpg"],
+        "apg": row["apg"],
+        "class_year": row["class_year"],
+        "height": row["height"],
+        "weight": row["weight"],
+        "hometown": row["hometown"],
+        "is_eliminated": bool(row["is_eliminated"]),
+        "is_injured": bool(row["is_injured"]),
+        "team_name": row["team_name"],
+        "seed": row["seed"],
+        "region": row["region"],
+    }
+
+
 def add_fantasy_team(main_db_url: str, database_name: str, name: str) -> None:
     engine = _draft_engine(main_db_url, database_name)
     with engine.begin() as conn:

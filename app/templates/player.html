@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="mb-3">
+    <a href="{{ url_for('main.team_rosters') }}" class="btn btn-sm btn-outline-secondary">&larr; Back to Rosters</a>
+</div>
+
+<div class="row g-4">
+    <!-- Player header card -->
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center gap-3 flex-wrap">
+                    <div>
+                        {% if player.jersey_number %}
+                        <span class="display-6 text-muted me-2">#{{ player.jersey_number }}</span>
+                        {% endif %}
+                        <span class="display-6 fw-bold">{{ player.first_name }} {{ player.last_name }}</span>
+                    </div>
+                    <div class="d-flex gap-2 ms-auto flex-wrap">
+                        {% if player.is_eliminated %}
+                        <span class="badge text-bg-danger fs-6 px-3 py-2">Eliminated</span>
+                        {% else %}
+                        <span class="badge text-bg-success fs-6 px-3 py-2">Active</span>
+                        {% endif %}
+                        {% if player.is_injured %}
+                        <span class="badge text-bg-warning fs-6 px-3 py-2">Injured</span>
+                        {% else %}
+                        <span class="badge text-bg-success fs-6 px-3 py-2">Healthy</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="text-muted mt-1">
+                    {{ player.team_name }}
+                    &mdash;
+                    Seed #{{ player.seed }} &bull; {{ player.region }} Region
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Player details -->
+    <div class="col-md-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-header fw-semibold">Player Info</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-5 text-muted">Position</dt>
+                    <dd class="col-7">{{ player.position or '—' }}</dd>
+
+                    <dt class="col-5 text-muted">Class</dt>
+                    <dd class="col-7">{{ player.class_year or '—' }}</dd>
+
+                    <dt class="col-5 text-muted">Height</dt>
+                    <dd class="col-7">{{ player.height or '—' }}</dd>
+
+                    <dt class="col-5 text-muted">Weight</dt>
+                    <dd class="col-7">{{ player.weight or '—' }}</dd>
+
+                    <dt class="col-5 text-muted">Hometown</dt>
+                    <dd class="col-7">{{ player.hometown or '—' }}</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="col-md-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-header fw-semibold">Season Stats</div>
+            <div class="card-body">
+                <div class="row text-center g-3">
+                    <div class="col-4">
+                        <div class="fs-3 fw-bold">{{ '%.1f' | format(player.ppg) if player.ppg is not none else '—' }}</div>
+                        <div class="text-muted small">PPG</div>
+                    </div>
+                    <div class="col-4">
+                        <div class="fs-3 fw-bold">{{ '%.1f' | format(player.rpg) if player.rpg is not none else '—' }}</div>
+                        <div class="text-muted small">RPG</div>
+                    </div>
+                    <div class="col-4">
+                        <div class="fs-3 fw-bold">{{ '%.1f' | format(player.apg) if player.apg is not none else '—' }}</div>
+                        <div class="text-muted small">APG</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin toggle buttons -->
+    {% if session.get('role') in ['admin', 'editor'] %}
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-header fw-semibold">Manage Player</div>
+            <div class="card-body d-flex gap-3 flex-wrap">
+
+                <!-- Eliminated / Active toggle -->
+                <form method="POST" action="{{ url_for('main.player_toggle_eliminated', player_id=player.id) }}">
+                    <input type="hidden" name="is_eliminated" value="{{ 'false' if player.is_eliminated else 'true' }}">
+                    {% if player.is_eliminated %}
+                    <button type="submit" class="btn btn-success">Mark Active</button>
+                    {% else %}
+                    <button type="submit" class="btn btn-danger">Mark Eliminated</button>
+                    {% endif %}
+                </form>
+
+                <!-- Injured / Healthy toggle -->
+                <form method="POST" action="{{ url_for('main.player_toggle_injured', player_id=player.id) }}">
+                    <input type="hidden" name="is_injured" value="{{ 'false' if player.is_injured else 'true' }}">
+                    {% if player.is_injured %}
+                    <button type="submit" class="btn btn-success">Mark Healthy</button>
+                    {% else %}
+                    <button type="submit" class="btn btn-warning">Mark Injured</button>
+                    {% endif %}
+                </form>
+
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}

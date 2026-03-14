@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 
+{% block container_class %}container-lg{% endblock %}
+
 {% block content %}
 <div class="card shadow-sm mb-4">
     <div class="card-body">
@@ -30,10 +32,7 @@
                     <tr>
                         <td class="fw-semibold rank-col">{{ loop.index }}</td>
                         <td class="team-col">
-                            <span class="fw-semibold">{{ row.team_name }}</span>
-                            {% if row.draft_position %}
-                            <span class="text-muted small">(Draft #{{ row.draft_position }})</span>
-                            {% endif %}
+                            <a class="fw-semibold text-decoration-none" href="{{ url_for('main.fantasy_teams') }}#team-{{ row.team_name | lower | replace(' ', '-') | replace('.', '') | replace("'", '') }}">{{ row.team_name }}</a>
                         </td>
                         {% for round in leaderboard_payload.round_columns %}
                         <td class="text-end round-col">{{ row.rounds.get(round.key, 0) }}</td>
@@ -56,6 +55,8 @@
 }
 
 .leaderboard-table .team-col {
+    width: 12rem;
+    max-width: 14rem;
     padding-left: 0.35rem;
 }
 

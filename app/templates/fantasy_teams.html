@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 
+{% block container_class %}container-lg{% endblock %}
+
 {% block content %}
 {% set can_edit_points = session.get('role') in ['admin', 'editor'] %}
 <div class="card shadow-sm mb-4">
@@ -13,7 +15,7 @@
 <div class="alert alert-warning">No fantasy teams found for this draft.</div>
 {% else %}
     {% for team in fantasy_payload.teams %}
-    <div class="card shadow-sm mb-4">
+    <div class="card shadow-sm mb-4" id="team-{{ team.name | lower | replace(' ', '-') | replace('.', '') | replace("'", '') }}">
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h2 class="h5 mb-0">
@@ -34,7 +36,7 @@
                         <tr>
                             <th>Player</th>
                             {% for round in fantasy_payload.round_columns %}
-                            <th class="text-end round-col border-start">{{ round.label }}</th>
+                            <th class="text-start round-col border-start">{{ round.label }}</th>
                             {% endfor %}
                             <th class="text-end total-col border-start">Total</th>
                         </tr>
@@ -43,43 +45,46 @@
                         {% for player in team.players %}
                         <tr data-player-row="true" data-player-id="{{ player.player_id }}">
                             <td>
-                                <div class="fw-semibold">{{ player.player_name }}</div>
-                                <div class="small text-muted">{{ player.college_team_name }} | Pick #{{ player.pick_number }}</div>
+                                <div class="d-flex flex-wrap align-items-center gap-2">
+                                    <span class="fw-semibold">{{ player.player_name }}</span>
+                                    <span class="small text-muted">| {{ player.college_team_name }} | Pick #{{ player.pick_number }}</span>
+                                    {% if can_edit_points %}
+                                    <div class="row-point-actions d-none">
+                                        <button type="button" class="btn btn-success btn-sm row-point-confirm">Confirm</button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm row-point-cancel">Cancel</button>
+                                        <span class="row-point-error text-danger small d-none"></span>
+                                    </div>
+                                    {% endif %}
+                                </div>
                                 <div class="d-flex flex-wrap align-items-center gap-2 mt-1">
+                                    {% if can_edit_points %}
+                                    <form method="post" action="{{ url_for('main.fantasy_teams_toggle_eliminated') }}" class="d-inline">
+                                        <input type="hidden" name="player_id" value="{{ player.player_id }}">
+                                        <input type="hidden" name="is_eliminated" value="{{ 'false' if player.is_eliminated else 'true' }}">
+                                        <button type="submit" class="btn btn-sm py-0 px-1 {% if player.is_eliminated %}btn-danger{% else %}btn-success{% endif %}" style="font-size:0.7rem;">
+                                            {% if player.is_eliminated %}Eliminated{% else %}Active{% endif %}
+                                        </button>
+                                    </form>
+                                    {% else %}
                                     {% if player.is_eliminated %}
                                     <span class="badge text-bg-danger">Eliminated</span>
                                     {% else %}
                                     <span class="badge text-bg-success-subtle border border-success-subtle text-success-emphasis">Active</span>
                                     {% endif %}
-                                    {% if can_edit_points %}
-                                    <form method="post" action="{{ url_for('main.fantasy_teams_toggle_eliminated') }}" class="d-inline">
-                                        <input type="hidden" name="player_id" value="{{ player.player_id }}">
-                                        <input type="hidden" name="is_eliminated" value="{{ 'false' if player.is_eliminated else 'true' }}">
-                                        <button type="submit" class="btn btn-outline-secondary btn-sm py-0 px-2">
-                                            {% if player.is_eliminated %}Unmark Eliminated{% else %}Mark Eliminated{% endif %}
-                                        </button>
-                                    </form>
                                     {% endif %}
                                 </div>
-                                {% if can_edit_points %}
-                                <div class="row-point-actions d-none mt-1">
-                                    <button type="button" class="btn btn-success btn-sm row-point-confirm">Confirm</button>
-                                    <button type="button" class="btn btn-outline-secondary btn-sm row-point-cancel">Cancel</button>
-                                    <span class="row-point-error text-danger small d-none"></span>
-                                </div>
-                                {% endif %}
                             </td>
                             {% for round in fantasy_payload.round_columns %}
                             {% set point_value = player.points.get(round.key) %}
                             {% if can_edit_points %}
-                            <td class="text-end round-col border-start">
+                            <td class="text-start round-col border-start">
                                     <div class="point-cell" data-round-value="{{ 0 if round.key == 'P' else round.key }}" data-original-value="{{ '' if point_value is none else point_value }}" title="Click to edit points">
                                         <span class="point-display">{{ point_value if point_value is not none else '_' }}</span>
                                     <input class="form-control form-control-sm point-input d-none" type="number" min="0" step="1" value="{{ '' if point_value is none else point_value }}">
                                 </div>
                             </td>
                             {% else %}
-                            <td class="text-end round-col border-start">{{ point_value if point_value is not none else '_' }}</td>
+                            <td class="text-start round-col border-start">{{ point_value if point_value is not none else '_' }}</td>
                             {% endif %}
                             {% endfor %}
                             <td class="text-end fw-semibold total-col border-start">{{ player.total }}</td>
@@ -90,7 +95,7 @@
                         <tr class="table-light">
                             <th>Round Totals</th>
                             {% for round in fantasy_payload.round_columns %}
-                            <th class="text-end round-col border-start">{{ team.round_totals.get(round.key, 0) }}</th>
+                            <th class="text-start round-col border-start">{{ team.round_totals.get(round.key, 0) }}</th>
                             {% endfor %}
                             <th class="text-end total-col border-start">{{ team.team_total }}</th>
                         </tr>
@@ -110,8 +115,8 @@
 .point-cell {
     display: inline-flex;
     align-items: center;
-    justify-content: flex-end;
-    min-width: 3.5rem;
+    justify-content: flex-start;
+    min-width: 2rem;
 }
 
 .row-point-actions {
@@ -121,11 +126,11 @@
 }
 
 .fantasy-teams-table .round-col {
-    width: 3.35rem;
-    min-width: 3.35rem;
-    max-width: 3.35rem;
-    padding-left: 0.35rem;
-    padding-right: 0.35rem;
+    width: 5.5rem;
+    min-width: 5.5rem;
+    max-width: 5.5rem;
+    padding-left: 0.6rem;
+    padding-right: 0.6rem;
 }
 
 .fantasy-teams-table .total-col {
