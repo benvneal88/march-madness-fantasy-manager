@@ -26,6 +26,7 @@ from app.app import (
     get_leaderboard_payload,
     get_player_detail,
     get_rosters_payload,
+    get_team_detail_payload,
     get_team_roster_payload,
     lock_draft_order,
     randomize_draft_order,
@@ -43,10 +44,9 @@ from app.models.draft import (
     build_draft_database_url,
     create_draft_database,
     create_draft_schema,
-    populate_players_from_sportsref_roster,
     seed_teams_from_csv,
 )
-from app.integrations.sportsreference import fetch_rosters_for_teams
+from app.roster_jobs import get_roster_fetch_job_status, start_roster_fetch_job
 
 
 main_bp = Blueprint("main", __name__)
@@ -398,6 +398,28 @@ def player_detail(player_id: int):
     )
 
 
+@main_bp.route("/teams/<int:team_id>")
+@login_required
+@draft_required
+def team_detail(team_id: int):
+    selected_draft = _selected_draft()
+    team = get_team_detail_payload(
+        current_app.config["SQLALCHEMY_DATABASE_URI"],
+        selected_draft.database_name,
+        team_id,
+    )
+    if not team:
+        flash("Team not found.", "danger")
+        return redirect(url_for("main.team_rosters"))
+
+    return render_template(
+        "team.html",
+        page_title=team["team_name"],
+        selected_draft=selected_draft,
+        team=team,
+    )
+
+
 @main_bp.post("/player/<int:player_id>/toggle-injured")
 @login_required
 @draft_required
@@ -467,9 +489,9 @@ def draft_night():
         return redirect(url_for("main.select_draft"))
 
     create_draft_schema(current_app.config["SQLALCHEMY_DATABASE_URI"], selected_draft.database_name)
-    min_ppg = request.args.get("min_ppg", default=0.0, type=float)
+    min_ppg = request.args.get("min_ppg", default=5.0, type=float)
     if min_ppg is None:
-        min_ppg = 0.0
+        min_ppg = 5.0
 
     payload = get_draft_night_payload(
         current_app.config["SQLALCHEMY_DATABASE_URI"],
@@ -582,6 +604,7 @@ def admin_draft_detail(draft_id: int):
         fantasy_teams=draft_payload["fantasy_teams"],
         owners=draft_payload["owners"],
         draft_order_locked=draft_payload["draft_order_locked"],
+        roster_fetch_status=get_roster_fetch_job_status(selected_draft.id),
         active_admin_tab="drafts",
     )
 
@@ -696,22 +719,30 @@ def admin_fetch_rosters(draft_id: int):
         flash("No teams found in this draft — seed teams first.", "warning")
         return redirect(url_for("main.admin_draft_detail", draft_id=draft.id))
 
-    unmatched = fetch_rosters_for_teams(draft_db_url, team_names, draft.year)
-    for team_name in unmatched:
-        flash(
-            f"Could not match '{team_name}' to a sports-reference school — roster not loaded.",
-            "warning",
-        )
-
-    players_inserted = populate_players_from_sportsref_roster(
-        current_app.config["SQLALCHEMY_DATABASE_URI"], draft.database_name, draft.year
+    _, started = start_roster_fetch_job(
+        draft_id=draft.id,
+        main_db_url=draft_db_url,
+        database_name=draft.database_name,
+        season_year=draft.year,
+        team_names=team_names,
     )
-    if players_inserted:
-        flash(f"{players_inserted} players loaded into the draft.", "info")
+
+    if started:
+        flash("Roster fetch started in the background. This page will show progress.", "info")
     else:
-        flash("Players already loaded or no roster data available.", "info")
+        flash("Roster fetch is already running for this draft.", "warning")
 
     return redirect(url_for("main.admin_draft_detail", draft_id=draft.id))
+
+
+@main_bp.get("/admin/fetch-rosters/<int:draft_id>/status")
+@login_required
+@role_required("admin")
+def admin_fetch_rosters_status(draft_id: int):
+    status = get_roster_fetch_job_status(draft_id)
+    if not status:
+        return jsonify({"status": "idle"})
+    return jsonify(status)
 
 
 @main_bp.post("/admin/update-draft")
@@ -719,16 +750,12 @@ def admin_fetch_rosters(draft_id: int):
 @role_required("admin")
 def admin_update_draft():
     draft_id = request.form.get("draft_id", type=int)
-    num_rounds = request.form.get("num_draft_rounds", type=int)
     is_active = request.form.get("is_active") == "on"
 
     draft = db.session.get(Draft, draft_id)
     if not draft:
         flash("Draft not found.", "danger")
         return redirect(url_for("main.admin_drafts"))
-
-    if num_rounds:
-        draft.num_draft_rounds = max(1, num_rounds)
 
     if is_active:
         Draft.query.update({Draft.is_active: False})
@@ -737,7 +764,7 @@ def admin_update_draft():
         draft.is_active = False
 
     db.session.commit()
-    flash("Draft configuration updated.", "success")
+    flash("Draft status updated.", "success")
     return redirect(url_for("main.admin_draft_detail", draft_id=draft.id))
 
 

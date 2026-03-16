@@ -19,12 +19,10 @@
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h2 class="h5 mb-0">
-                    {% if team.draft_position %}
-                    #{{ team.draft_position }}
-                    {% else %}
-                    #-
-                    {% endif %}
                     {{ team.name }}
+                    {% for owner_name in team.owner_names %}
+                    <span class="small text-muted fw-normal">| {{ owner_name }}</span>
+                    {% endfor %}
                 </h2>
                 <span class="badge text-bg-primary">Team Total: {{ team.team_total }}</span>
             </div>

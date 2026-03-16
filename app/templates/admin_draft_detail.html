@@ -1,110 +1,73 @@
 {% extends "admin_base.html" %}
 
 {% block admin_content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h2 class="h5 mb-0">Draft Details</h2>
-    <span class="badge text-bg-primary">{{ selected_draft.name }} ({{ selected_draft.year }})</span>
-</div>
-
-<div class="row g-4">
-    <div class="col-12">
-        <div class="card shadow-sm border-warning-subtle">
-            <div class="card-body">
-                <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
-                    <div>
-                        <h3 class="h6 mb-1">Draft Order</h3>
-                        <p class="text-muted mb-0">
-                            Status:
-                            {% if draft_order_locked %}
-                            <span class="badge text-bg-success">Locked In</span>
-                            {% else %}
-                            <span class="badge text-bg-warning">Not Locked</span>
-                            {% endif %}
-                        </p>
-                    </div>
-                    <div class="d-flex flex-wrap gap-2">
-                        <form method="post" action="{{ url_for('main.admin_fetch_rosters', draft_id=selected_draft.id) }}">
-                            <button class="btn btn-outline-secondary btn-sm" type="submit">Fetch Rosters</button>
-                        </form>
-                        <form method="post" action="{{ url_for('main.admin_randomize_draft_order') }}">
-                            <input type="hidden" name="draft_id" value="{{ selected_draft.id }}">
-                            <button class="btn btn-outline-primary btn-sm" type="submit" {% if draft_order_locked %}disabled{% endif %}>Randomize</button>
-                        </form>
-                        <form method="post" action="{{ url_for('main.admin_lock_draft_order') }}">
-                            <input type="hidden" name="draft_id" value="{{ selected_draft.id }}">
-                            <button class="btn btn-primary btn-sm" type="submit" {% if draft_order_locked %}disabled{% endif %}>Lock-In</button>
-                        </form>
-                    </div>
-                </div>
-
-                <hr>
-
-                <div class="row row-cols-1 row-cols-md-2 row-cols-lg-4 g-2">
-                    {% for team in fantasy_teams|sort(attribute='draft_position') %}
-                    <div class="col">
-                        <div class="border rounded p-2 h-100">
-                            <div class="small text-muted">Draft Position</div>
-                            <div class="fw-semibold">
-                                {% if team.draft_position %}
-                                #{{ team.draft_position }} - {{ team.name }}
-                                {% else %}
-                                TBD - {{ team.name }}
-                                {% endif %}
-                            </div>
-                        </div>
-                    </div>
-                    {% else %}
-                    <div class="col-12 text-muted">No fantasy teams yet.</div>
-                    {% endfor %}
-                </div>
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+            <div>
+                <h2 class="h5 mb-1">{{ selected_draft.name }} ({{ selected_draft.year }})</h2>
+                <p class="text-muted mb-0">Draft summary</p>
             </div>
-        </div>
-    </div>
-
-    <div class="col-lg-6">
-        <div class="card shadow-sm">
-            <div class="card-body">
-                <h3 class="h6">Update Draft Configuration</h3>
-                <form method="post" action="{{ url_for('main.admin_update_draft') }}" class="row g-2">
+            <div class="d-flex flex-column align-items-start align-items-md-end gap-2">
+                <div class="small text-muted">
+                    Status:
+                    {% if draft_order_locked %}
+                    <span class="badge text-bg-success">Locked In</span>
+                    {% else %}
+                    <span class="badge text-bg-warning">Not Locked</span>
+                    {% endif %}
+                </div>
+                <form method="post" action="{{ url_for('main.admin_update_draft') }}" class="d-flex align-items-center gap-2">
                     <input type="hidden" name="draft_id" value="{{ selected_draft.id }}">
-                    <div class="col-md-4">
-                        <label class="form-label">Draft Rounds</label>
-                        <input class="form-control" name="num_draft_rounds" type="number" min="1" value="{{ selected_draft.num_draft_rounds }}">
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" name="is_active" id="is_active" {% if selected_draft.is_active %}checked{% endif %}>
+                        <label class="form-check-label" for="is_active">Active</label>
                     </div>
-                    <div class="col-md-8 d-flex align-items-end">
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" name="is_active" id="is_active" {% if selected_draft.is_active %}checked{% endif %}>
-                            <label class="form-check-label" for="is_active">Mark this draft as active</label>
-                        </div>
-                    </div>
-                    <div class="col-12">
-                        <button class="btn btn-outline-primary" type="submit">Save Config</button>
-                    </div>
+                    <button class="btn btn-outline-primary btn-sm" type="submit">Save</button>
                 </form>
             </div>
         </div>
     </div>
+</div>
 
-    <div class="col-lg-6">
-        <div class="card shadow-sm">
-            <div class="card-body">
-                <h3 class="h6">Draft Metadata</h3>
-                <ul class="list-group list-group-flush">
-                    <li class="list-group-item d-flex justify-content-between"><span>ID</span><span>{{ selected_draft.id }}</span></li>
-                    <li class="list-group-item d-flex justify-content-between"><span>Name</span><span>{{ selected_draft.name }}</span></li>
-                    <li class="list-group-item d-flex justify-content-between"><span>Year</span><span>{{ selected_draft.year }}</span></li>
-                    <li class="list-group-item d-flex justify-content-between"><span>Slug</span><span>{{ selected_draft.slug }}</span></li>
-                    <li class="list-group-item d-flex justify-content-between"><span>Database</span><span>{{ selected_draft.database_name }}</span></li>
-                    <li class="list-group-item d-flex justify-content-between"><span>Active</span><span>{% if selected_draft.is_active %}Yes{% else %}No{% endif %}</span></li>
-                </ul>
-            </div>
-        </div>
-    </div>
-
+<div class="row g-4">
     <div class="col-lg-6">
         <div class="card shadow-sm">
             <div class="card-body">
                 <h3 class="h6">Fantasy Teams</h3>
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                    <form method="post" action="{{ url_for('main.admin_fetch_rosters', draft_id=selected_draft.id) }}">
+                        <button class="btn btn-outline-secondary btn-sm" type="submit">Fetch Rosters</button>
+                    </form>
+                    <form method="post" action="{{ url_for('main.admin_randomize_draft_order') }}">
+                        <input type="hidden" name="draft_id" value="{{ selected_draft.id }}">
+                        <button class="btn btn-outline-primary btn-sm" type="submit" {% if draft_order_locked %}disabled{% endif %}>Randomize</button>
+                    </form>
+                    <form method="post" action="{{ url_for('main.admin_lock_draft_order') }}">
+                        <input type="hidden" name="draft_id" value="{{ selected_draft.id }}">
+                        <button class="btn btn-primary btn-sm" type="submit" {% if draft_order_locked %}disabled{% endif %}>Lock-In</button>
+                    </form>
+                </div>
+
+                <div
+                    id="roster-fetch-status"
+                    class="small text-muted mb-3"
+                    data-status-url="{{ url_for('main.admin_fetch_rosters_status', draft_id=selected_draft.id) }}"
+                    data-has-status="{{ '1' if roster_fetch_status else '0' }}"
+                >
+                    {% if roster_fetch_status %}
+                        {% if roster_fetch_status.status == 'running' %}
+                        Roster fetch in progress...
+                        {% elif roster_fetch_status.status == 'completed' %}
+                        Roster fetch complete. Fetched {{ roster_fetch_status.fetched_count }}, skipped {{ roster_fetch_status.skipped_existing_count }}, unmatched {{ roster_fetch_status.unmatched_count }}. Players inserted: {{ roster_fetch_status.players_inserted }}.
+                        {% elif roster_fetch_status.status == 'failed' %}
+                        Roster fetch failed: {{ roster_fetch_status.error }}
+                        {% endif %}
+                    {% else %}
+                    No roster fetch job running.
+                    {% endif %}
+                </div>
+
                 <form method="post" action="{{ url_for('main.admin_add_fantasy_team') }}" class="d-flex gap-2 mb-3">
                     <input type="hidden" name="draft_id" value="{{ selected_draft.id }}">
                     <input class="form-control" name="name" placeholder="New fantasy team" required>
@@ -133,6 +96,21 @@
     </div>
 
     <div class="col-lg-6">
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <h3 class="h6">Draft Metadata</h3>
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item d-flex justify-content-between"><span>ID</span><span>{{ selected_draft.id }}</span></li>
+                    <li class="list-group-item d-flex justify-content-between"><span>Name</span><span>{{ selected_draft.name }}</span></li>
+                    <li class="list-group-item d-flex justify-content-between"><span>Year</span><span>{{ selected_draft.year }}</span></li>
+                    <li class="list-group-item d-flex justify-content-between"><span>Draft Rounds</span><span>{{ selected_draft.num_draft_rounds }}</span></li>
+                    <li class="list-group-item d-flex justify-content-between"><span>Slug</span><span>{{ selected_draft.slug }}</span></li>
+                    <li class="list-group-item d-flex justify-content-between"><span>Database</span><span>{{ selected_draft.database_name }}</span></li>
+                    <li class="list-group-item d-flex justify-content-between"><span>Active</span><span>{% if selected_draft.is_active %}Yes{% else %}No{% endif %}</span></li>
+                </ul>
+            </div>
+        </div>
+
         <div class="card shadow-sm">
             <div class="card-body">
                 <h3 class="h6">Owners</h3>
@@ -200,4 +178,87 @@
         </div>
     </div>
 </div>
+
+<script>
+(() => {
+    const statusEl = document.getElementById('roster-fetch-status');
+    if (!statusEl) {
+        return;
+    }
+
+    const statusUrl = statusEl.dataset.statusUrl;
+    if (!statusUrl) {
+        return;
+    }
+
+    function renderStatus(data) {
+        if (!data || !data.status || data.status === 'idle') {
+            statusEl.textContent = 'No roster fetch job running.';
+            statusEl.className = 'small text-muted mb-3';
+            return false;
+        }
+
+        if (data.status === 'running') {
+            statusEl.textContent =
+                'Roster fetch in progress... '
+                + `Fetched ${data.fetched_count || 0}, `
+                + `skipped ${data.skipped_existing_count || 0}, `
+                + `unmatched ${data.unmatched_count || 0}.`;
+            statusEl.className = 'small text-primary mb-3';
+            return true;
+        }
+
+        if (data.status === 'completed') {
+            statusEl.textContent =
+                'Roster fetch complete. '
+                + `Fetched ${data.fetched_count || 0}, `
+                + `skipped ${data.skipped_existing_count || 0}, `
+                + `unmatched ${data.unmatched_count || 0}. `
+                + `Players inserted: ${data.players_inserted || 0}.`;
+            statusEl.className = 'small text-success mb-3';
+            return false;
+        }
+
+        if (data.status === 'failed') {
+            statusEl.textContent = `Roster fetch failed: ${data.error || 'Unknown error.'}`;
+            statusEl.className = 'small text-danger mb-3';
+            return false;
+        }
+
+        statusEl.textContent = 'No roster fetch job running.';
+        statusEl.className = 'small text-muted mb-3';
+        return false;
+    }
+
+    async function pollStatus() {
+        try {
+            const response = await fetch(statusUrl, { headers: { 'Accept': 'application/json' } });
+            if (!response.ok) {
+                return false;
+            }
+
+            const data = await response.json();
+            return renderStatus(data);
+        } catch (err) {
+            return false;
+        }
+    }
+
+    let poller = null;
+
+    pollStatus().then((shouldContinue) => {
+        if (!shouldContinue) {
+            return;
+        }
+
+        poller = window.setInterval(async () => {
+            const running = await pollStatus();
+            if (!running && poller) {
+                window.clearInterval(poller);
+                poller = null;
+            }
+        }, 3000);
+    });
+})();
+</script>
 {% endblock %}

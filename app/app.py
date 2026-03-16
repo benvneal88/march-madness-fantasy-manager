@@ -189,6 +189,17 @@ def get_fantasy_teams_payload(main_db_url: str, database_name: str) -> dict[str,
             )
         ).mappings().all()
 
+        owner_assignment_rows = conn.execute(
+            text(
+                """
+                SELECT oft.fantasy_team_id, o.name AS owner_name
+                FROM tbl_owner_fantasy_teams oft
+                INNER JOIN tbl_owners o ON o.id = oft.owner_id
+                ORDER BY oft.fantasy_team_id, o.name
+                """
+            )
+        ).mappings().all()
+
     engine.dispose()
 
     round_columns = [{"key": col["key"], "label": col["label"]} for col in FANTASY_ROUND_COLUMNS]
@@ -202,6 +213,14 @@ def get_fantasy_teams_payload(main_db_url: str, database_name: str) -> dict[str,
             continue
 
         points_by_player.setdefault(player_id, {})[round_key] = int(row["total_points"] or 0)
+
+    owners_by_team: dict[int, list[str]] = {}
+    for row in owner_assignment_rows:
+        team_id = int(row["fantasy_team_id"])
+        owner_name = str(row["owner_name"] or "").strip()
+        if not owner_name:
+            continue
+        owners_by_team.setdefault(team_id, []).append(owner_name)
 
     players_by_team: dict[int, list[dict[str, Any]]] = {}
     for row in drafted_players:
@@ -237,6 +256,7 @@ def get_fantasy_teams_payload(main_db_url: str, database_name: str) -> dict[str,
                 "id": int(team["id"]),
                 "name": team["name"],
                 "draft_position": team["draft_position"],
+                "owner_names": owners_by_team.get(int(team["id"]), []),
                 "players": team_players,
                 "round_totals": round_totals,
                 "team_total": team_total,
@@ -384,7 +404,7 @@ def get_rosters_payload(main_db_url: str, database_name: str) -> dict[str, Any]:
                 SELECT p.id, p.first_name, p.last_name, p.position, p.jersey_number,
                        p.ppg, p.rpg, p.apg, p.class_year, p.height, p.weight,
                        p.hometown, p.is_eliminated, p.is_injured,
-                       t.id AS team_id, t.name AS team_name, t.seed, t.region
+                     t.id AS team_id, t.name AS team_name, t.seed, t.region
                 FROM tbl_players p
                 INNER JOIN tbl_teams t ON t.id = p.team_id
                 ORDER BY t.region, t.seed, p.last_name, p.first_name
@@ -422,6 +442,15 @@ def get_rosters_payload(main_db_url: str, database_name: str) -> dict[str, Any]:
                 "is_eliminated": bool(row["is_eliminated"]),
                 "is_injured": bool(row["is_injured"]),
             }
+        )
+
+    for team_payload in teams.values():
+        team_payload["players"].sort(
+            key=lambda player: (
+                player["ppg"] is not None,
+                float(player["ppg"] or 0),
+            ),
+            reverse=True,
         )
 
     return {"teams": list(teams.values())}
@@ -469,6 +498,70 @@ def get_player_detail(main_db_url: str, database_name: str, player_id: int) -> d
         "team_name": row["team_name"],
         "seed": row["seed"],
         "region": row["region"],
+    }
+
+
+def get_team_detail_payload(main_db_url: str, database_name: str, team_id: int) -> dict[str, Any] | None:
+    engine = _draft_engine(main_db_url, database_name)
+
+    with engine.connect() as conn:
+        team_row = conn.execute(
+            text(
+                """
+                SELECT id, name, seed, region
+                FROM tbl_teams
+                WHERE id = :team_id
+                """
+            ),
+            {"team_id": team_id},
+        ).mappings().one_or_none()
+
+        if not team_row:
+            engine.dispose()
+            return None
+
+        player_rows = conn.execute(
+            text(
+                """
+                SELECT id, first_name, last_name, position, jersey_number,
+                       ppg, rpg, apg, class_year, height, weight, hometown,
+                       is_eliminated, is_injured
+                FROM tbl_players
+                WHERE team_id = :team_id
+                ORDER BY last_name, first_name
+                """
+            ),
+            {"team_id": team_id},
+        ).mappings().all()
+
+    engine.dispose()
+
+    players = [
+        {
+            "id": int(row["id"]),
+            "first_name": row["first_name"],
+            "last_name": row["last_name"],
+            "position": row["position"],
+            "jersey_number": row["jersey_number"],
+            "ppg": row["ppg"],
+            "rpg": row["rpg"],
+            "apg": row["apg"],
+            "class_year": row["class_year"],
+            "height": row["height"],
+            "weight": row["weight"],
+            "hometown": row["hometown"],
+            "is_eliminated": bool(row["is_eliminated"]),
+            "is_injured": bool(row["is_injured"]),
+        }
+        for row in player_rows
+    ]
+
+    return {
+        "team_id": int(team_row["id"]),
+        "team_name": team_row["name"],
+        "seed": team_row["seed"],
+        "region": team_row["region"],
+        "players": players,
     }
 
 
@@ -632,6 +725,7 @@ def search_available_players(main_db_url: str, database_name: str, query: str, l
                 INNER JOIN tbl_teams t ON t.id = p.team_id
                 LEFT JOIN tbl_player_draft_event de ON de.player_id = p.id
                 WHERE de.id IS NULL
+                    AND p.is_injured = false
                     AND (
                         p.first_name ILIKE :q
                         OR p.last_name ILIKE :q
@@ -706,6 +800,8 @@ def get_draft_night_payload(main_db_url: str, database_name: str, rounds: int) -
                        de.pick_number,
                        p.first_name,
                        p.last_name,
+                       p.is_injured,
+                       t.id AS team_id,
                        t.name AS team_name
                 FROM tbl_player_draft_event de
                 INNER JOIN tbl_players p ON p.id = de.player_id
@@ -744,6 +840,8 @@ def get_draft_night_payload(main_db_url: str, database_name: str, rounds: int) -
             "pick_number": slot["pick_number"],
             "player_name": None,
             "player_team_name": None,
+            "player_team_id": None,
+            "player_is_injured": False,
             "player_id": None,
         }
 
@@ -753,6 +851,8 @@ def get_draft_night_payload(main_db_url: str, database_name: str, rounds: int) -
         if key in board:
             board[key]["player_name"] = f"{event['first_name']} {event['last_name']}"
             board[key]["player_team_name"] = event["team_name"]
+            board[key]["player_team_id"] = event["team_id"]
+            board[key]["player_is_injured"] = bool(event["is_injured"])
             board[key]["player_id"] = event["player_id"]
             drafted_count += 1
 
@@ -805,12 +905,14 @@ def draft_player_pick(
         if expected_pick["fantasy_team_id"] != fantasy_team_id:
             raise ValueError("This is not the next pick in snake order.")
 
-        player_exists = conn.execute(
-            text("SELECT 1 FROM tbl_players WHERE id = :player_id"),
+        player_row = conn.execute(
+            text("SELECT is_injured FROM tbl_players WHERE id = :player_id"),
             {"player_id": player_id},
-        ).scalar_one_or_none()
-        if not player_exists:
+        ).mappings().one_or_none()
+        if not player_row:
             raise ValueError("Selected player was not found.")
+        if bool(player_row["is_injured"]):
+            raise ValueError("Selected player is injured and cannot be drafted.")
 
         already_drafted = conn.execute(
             text("SELECT 1 FROM tbl_player_draft_event WHERE player_id = :player_id"),
@@ -849,12 +951,14 @@ def get_team_roster_payload(
                 """
                 SELECT t.region,
                        t.seed,
+                      t.id AS team_id,
                        t.name AS team_name,
                        p.id AS player_id,
                        p.first_name,
                        p.last_name,
                        p.position,
                        COALESCE(p.ppg, 0) AS ppg,
+                      p.is_injured,
                        CASE WHEN de.id IS NOT NULL THEN TRUE ELSE FALSE END AS is_drafted
                 FROM tbl_teams t
                 LEFT JOIN tbl_players p
@@ -891,6 +995,7 @@ def get_team_roster_payload(
         key = (region, seed)
         if key not in teams_by_region_seed:
             teams_by_region_seed[key] = {
+                "team_id": row["team_id"],
                 "team_name": row["team_name"],
                 "players": [],
             }
@@ -902,6 +1007,7 @@ def get_team_roster_payload(
                     "name": f"{row['first_name']} {row['last_name']}",
                     "position": row["position"] or "-",
                     "ppg": float(row["ppg"] or 0),
+                    "is_injured": bool(row["is_injured"]),
                     "is_drafted": bool(row["is_drafted"]),
                 }
             )

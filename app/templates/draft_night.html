@@ -70,8 +70,18 @@
                             {% set is_next_pick = draft_payload.next_pick and draft_payload.next_pick.fantasy_team_id == team.id and draft_payload.next_pick.draft_round == round %}
                             <td>
                                 {% if slot and slot.player_name %}
-                                <div class="small fw-semibold">{{ slot.player_name }}</div>
-                                <div class="small text-muted">{{ slot.player_team_name }}</div>
+                                <div class="small fw-semibold">
+                                    <span class="{% if slot.player_is_injured %}injured-board-text{% endif %}">
+                                        {{ slot.player_name }}{% if slot.player_is_injured %} 🏥{% endif %}
+                                    </span>
+                                </div>
+                                <div class="small text-muted">
+                                    {% if slot.player_team_id %}
+                                    <a class="text-muted text-decoration-none {% if slot.player_is_injured %}injured-board-text{% endif %}" href="{{ url_for('main.team_detail', team_id=slot.player_team_id) }}">{{ slot.player_team_name }}</a>
+                                    {% else %}
+                                    <span class="{% if slot.player_is_injured %}injured-board-text{% endif %}">{{ slot.player_team_name }}</span>
+                                    {% endif %}
+                                </div>
                                 {% elif is_next_pick and draft_payload.draft_order_locked %}
                                 <button
                                     type="button"
@@ -156,19 +166,23 @@
                         <td>
                             {% set team_slot = seed_row.regions.get(region) %}
                             {% if team_slot %}
-                            <div class="fw-semibold mb-1">{{ team_slot.team_name }}</div>
+                            <div class="fw-semibold mb-1">
+                                <a class="text-decoration-none" href="{{ url_for('main.team_detail', team_id=team_slot.team_id) }}">{{ team_slot.team_name }}</a>
+                            </div>
                             {% if team_slot.players %}
                             <ul class="list-unstyled mb-0 small">
                                 {% for player in team_slot.players %}
                                 <li
-                                    class="roster-player-row {% if player.is_drafted %}roster-player-drafted{% else %}roster-player-clickable js-roster-player-pick{% endif %}"
-                                    {% if not player.is_drafted %}
+                                    class="roster-player-row {% if player.is_drafted %}roster-player-drafted{% elif player.is_injured %}roster-player-injured{% else %}roster-player-clickable js-roster-player-pick{% endif %}"
+                                    {% if (not player.is_drafted) and (not player.is_injured) %}
                                     data-player-id="{{ player.player_id }}"
                                     data-player-name="{{ player.name }}"
                                     data-player-team="{{ team_slot.team_name }}"
                                     {% endif %}
                                 >
-                                    <span class="roster-player-name">{{ player.name }} ({{ player.position }})</span>
+                                    <span class="roster-player-name">
+                                        {{ player.name }} ({{ player.position }}){% if player.is_injured %} 🏥{% endif %}
+                                    </span>
                                     <span class="roster-player-ppg">{{ '%.1f'|format(player.ppg) }} PPG</span>
                                 </li>
                                 {% endfor %}
@@ -247,6 +261,11 @@
     opacity: 0.75;
 }
 
+.roster-player-injured {
+    text-decoration: line-through;
+    opacity: 0.75;
+}
+
 .roster-player-clickable {
     cursor: pointer;
     border-radius: 0.3rem;
@@ -255,6 +274,10 @@
 
 .roster-player-clickable:hover {
     background: rgba(127, 127, 127, 0.12);
+}
+
+.injured-board-text {
+    text-decoration: line-through;
 }
 </style>
 

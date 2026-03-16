@@ -31,6 +31,15 @@ _rate_lock = threading.Lock()
 _request_timestamps: collections.deque[float] = collections.deque()
 
 
+def _available_request_slots() -> int:
+    """Return currently available rate-limit slots in the active window."""
+    with _rate_lock:
+        now = time.monotonic()
+        while _request_timestamps and now - _request_timestamps[0] >= _RATE_LIMIT_WINDOW:
+            _request_timestamps.popleft()
+        return max(0, _RATE_LIMIT_REQUESTS - len(_request_timestamps))
+
+
 def _rate_limited_get(url: str, **kwargs) -> requests.Response:
     """Perform a GET request respecting the 10 requests/minute rate limit.
 
@@ -327,23 +336,45 @@ def fetch_rosters_for_teams(
     db_url: str,
     team_names: list[str],
     season_year: int,
-) -> list[str]:
+    max_rosters_per_run: int = 5,
+) -> dict[str, list[str]]:
     """Scrape the school index then fetch a roster for every team in *team_names*.
 
     Steps:
-    1. Scrape (or refresh) tbl_sportsref_school_index for *season_year*.
+    1. Ensure tbl_sportsref_school_index is present for *season_year*.
     2. Build a case-insensitive lookup from school name → relative URL.
     3. For each team name, match against the index and call scrape_school_roster.
 
-    Returns a list of team names that could not be matched to the school index.
+    Returns a result object with:
+    - unmatched: team names that could not be matched or failed to scrape.
+    - skipped_existing: team names skipped because roster rows already exist.
+    - fetched: team names successfully fetched in this run.
+    - deferred: team names matched but deferred due to per-run/rate-limit budget.
 
     Args:
         db_url: SQLAlchemy connection string for the draft database.
         team_names: School names to fetch rosters for (typically from tbl_teams).
         season_year: NCAA season year (e.g. 2025).
+        max_rosters_per_run: Max number of rosters to fetch in one request.
     """
-    # 1. Populate (or refresh) the school index
-    scrape_school_index(db_url, season_year)
+    max_rosters_per_run = max(1, int(max_rosters_per_run))
+
+    # 1. Ensure we have school index rows for this season; avoid refreshing every
+    # request to reduce API calls and prevent long blocking requests.
+    engine = create_engine(db_url)
+    try:
+        with engine.connect() as conn:
+            index_count = conn.execute(
+                text(
+                    "SELECT COUNT(*) FROM tbl_sportsref_school_index WHERE season_year = :year"
+                ),
+                {"year": season_year},
+            ).scalar_one()
+    finally:
+        engine.dispose()
+
+    if int(index_count) == 0:
+        scrape_school_index(db_url, season_year)
 
     # 2. Read the index back and build a normalised lookup
     engine = create_engine(db_url)
@@ -366,17 +397,65 @@ def fetch_rosters_for_teams(
     }
 
     # 3. Match and scrape
+    # Build a set of teams already downloaded for this season so we can skip
+    # redundant network requests.
+    engine = create_engine(db_url)
+    try:
+        with engine.connect() as conn:
+            existing_rows = conn.execute(
+                text(
+                    "SELECT DISTINCT school_name FROM tbl_sportsref_school_roster"
+                    " WHERE season_year = :year"
+                ),
+                {"year": season_year},
+            ).mappings().all()
+    finally:
+        engine.dispose()
+
+    existing_rosters = {
+        str(row["school_name"]).strip().lower()
+        for row in existing_rows
+        if row.get("school_name")
+    }
+
     unmatched: list[str] = []
+    skipped_existing: list[str] = []
+    fetched: list[str] = []
+    deferred: list[str] = []
+
+    # Budget fetches so a single web request does not block long enough to hit
+    # gunicorn worker timeout.
+    available_slots = _available_request_slots()
+    fetch_budget = min(max_rosters_per_run, available_slots)
+
     for team_name in team_names:
-        url = index_by_name.get(team_name.strip().lower())
+        team_key = team_name.strip().lower()
+        if team_key in existing_rosters:
+            logger.info("Skipping roster fetch for %r (already downloaded)", team_name)
+            skipped_existing.append(team_name)
+            continue
+
+        url = index_by_name.get(team_key)
         if not url:
             logger.warning("No sports-reference match for team %r", team_name)
             unmatched.append(team_name)
             continue
+
+        if fetch_budget <= 0:
+            deferred.append(team_name)
+            continue
+
         try:
             scrape_school_roster(url, team_name, db_url, season_year)
+            fetched.append(team_name)
+            fetch_budget -= 1
         except Exception as exc:
             logger.error("Failed to scrape roster for %r: %s", team_name, exc)
             unmatched.append(team_name)
 
-    return unmatched
+    return {
+        "unmatched": unmatched,
+        "skipped_existing": skipped_existing,
+        "fetched": fetched,
+        "deferred": deferred,
+    }

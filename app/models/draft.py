@@ -303,9 +303,9 @@ def populate_players_from_sportsref_roster(main_db_url: str, database_name: str,
                 text(
                     "INSERT INTO tbl_players "
                     "(team_id, first_name, last_name, position, ppg, rpg, apg, "
-                    "jersey_number, class_year, height, weight, hometown, is_eliminated) "
+                    "jersey_number, class_year, height, weight, hometown, is_eliminated, is_injured) "
                     "VALUES (:team_id, :first_name, :last_name, :position, :ppg, :rpg, :apg, "
-                    ":jersey_number, :class_year, :height, :weight, :hometown, false)"
+                    ":jersey_number, :class_year, :height, :weight, :hometown, false, false)"
                 ),
                 {
                     "team_id": team_id,
