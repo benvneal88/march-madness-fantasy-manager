@@ -29,7 +29,7 @@
 
 <div class="card shadow-sm mb-4">
     <div class="card-body">
-        {% if draft_payload.next_pick %}
+        {% if draft_payload.next_pick and current_role in ['admin', 'editor'] %}
         <p class="mb-3">
             <strong>On The Clock:</strong>
             Pick #{{ draft_payload.next_pick.pick_number }}
@@ -48,6 +48,8 @@
                 <button class="btn btn-success btn-sm" type="submit" form="draftPickForm" id="confirmDraftBtn" disabled>Confirm Draft Pick</button>
             </div>
         </div>
+        {% elif draft_payload.next_pick and current_role == 'viewer' %}
+        <div class="alert alert-secondary mb-3">Viewer access is read-only. Only editors and admins can draft players.</div>
         {% endif %}
 
         <div class="table-responsive">
@@ -82,7 +84,7 @@
                                     <span class="{% if slot.player_is_injured %}injured-board-text{% endif %}">{{ slot.player_team_name }}</span>
                                     {% endif %}
                                 </div>
-                                {% elif is_next_pick and draft_payload.draft_order_locked %}
+                                {% elif is_next_pick and draft_payload.draft_order_locked and current_role in ['admin', 'editor'] %}
                                 <button
                                     type="button"
                                     class="btn btn-sm btn-primary js-pick-cell"
@@ -108,7 +110,7 @@
     </div>
 </div>
 
-<div class="card shadow-sm" id="draftPickCard" {% if not (draft_payload.next_pick and draft_payload.draft_order_locked) %}style="display:none"{% endif %}>
+<div class="card shadow-sm" id="draftPickCard" {% if not (draft_payload.next_pick and draft_payload.draft_order_locked and current_role in ['admin', 'editor']) %}style="display:none"{% endif %}>
     <div class="card-body">
         <h2 class="h6 mb-3">Draft Player</h2>
         <form method="post" action="{{ url_for('main.draft_night_draft_player') }}" id="draftPickForm">

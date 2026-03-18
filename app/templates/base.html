@@ -45,9 +45,11 @@
                     <li>
                         <a class="dropdown-item {% if current_role != 'admin' %}disabled{% endif %}" href="{{ url_for('main.admin_drafts') }}">Admin</a>
                     </li>
+                    {% if current_role == 'admin' %}
                     <li>
                         <a class="dropdown-item" href="{{ url_for('main.logs') }}">Logs</a>
                     </li>
+                    {% endif %}
                     <li><hr class="dropdown-divider"></li>
                     <li>
                         <form method="post" action="{{ url_for('main.set_theme') }}">

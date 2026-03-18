@@ -103,7 +103,6 @@
                     <tr>
                         <th>Timestamp</th>
                         <th>Role</th>
-                        <th>IP Address</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -111,11 +110,10 @@
                     <tr>
                         <td>{{ row.logged_in_at or '—' }}</td>
                         <td>{{ row.role | upper }}</td>
-                        <td>{{ row.ip_address or '—' }}</td>
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="3" class="text-muted">No login events found.</td>
+                        <td colspan="2" class="text-muted">No login events found.</td>
                     </tr>
                     {% endfor %}
                 </tbody>

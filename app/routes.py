@@ -513,6 +513,7 @@ def bracket():
 
 @main_bp.route("/logs")
 @login_required
+@role_required("admin")
 @draft_required
 def logs():
     selected_draft = _selected_draft()
@@ -543,7 +544,6 @@ def logs():
             {
                 "logged_in_at": row.logged_in_at,
                 "role": row.role,
-                "ip_address": row.ip_address,
             }
             for row in rows
         ]
@@ -603,6 +603,9 @@ def draft_night():
 @login_required
 @draft_required
 def draft_night_player_search():
+    if session.get("role") not in {"admin", "editor"}:
+        return jsonify({"error": "You do not have permission to draft players."}), 403
+
     selected_draft = _selected_draft()
     if not selected_draft:
         return jsonify([])
@@ -623,6 +626,10 @@ def draft_night_player_search():
 @login_required
 @draft_required
 def draft_night_draft_player():
+    if session.get("role") not in {"admin", "editor"}:
+        flash("You do not have permission to draft players.", "danger")
+        return redirect(url_for("main.draft_night"))
+
     selected_draft = _selected_draft()
     if not selected_draft:
         flash("Select a draft first.", "danger")
