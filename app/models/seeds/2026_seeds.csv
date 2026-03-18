@@ -1,17 +1,68 @@
 name,seed,region
 Duke,1,East
-Michigan,2,East
-Virginia,3,East
-Houston,4,East
-Arizona,1,West
-Iowa State,2,West
-Alabama,3,West
-Purdue,4,West
-Florida,1,Midwest
-Michigan State,2,Midwest
-North Carolina,3,Midwest
-Wisconsin,4,Midwest
-Nebraska,1,South
-Connecticut,2,South
+Siena,16,East
+Ohio State,8,East
+TCU,9,East
+"St. John's (NY)",5,East
+Northern Iowa,12,East
+Kansas,4,East
+California Baptist,13,East
+Louisville,6,East
+South Florida,11,East
+Michigan State,3,East
+North Dakota State,14,East
+UCLA,7,East
+UCF,10,East
+Connecticut,2,East
+Furman,15,East
+Michigan,1,Midwest
+Howard,16,Midwest
+Georgia,8,Midwest
+Saint Louis,9,Midwest
+Texas Tech,5,Midwest
+Akron,12,Midwest
+Alabama,4,Midwest
+Hofstra,13,Midwest
+Tennessee,6,Midwest
+"Miami (OH)",11,Midwest
+Southern Methodist,18,Midwest
+Virginia,3,Midwest
+Wright State,14,Midwest
+Kentucky,7,Midwest
+Santa Clara,10,Midwest
+Iowa State,2,Midwest
+Tennessee State,15,Midwest
+Florida,1,South
+"Prairie View A&M",16,South
+Lehigh,17,South
+Clemson,8,South
+Iowa,9,South
+Vanderbilt,5,South
+McNeese,12,South
+Nebraska,4,South
+Troy,13,South
+North Carolina,6,South
+Virginia Commonwealth,11,South
 Illinois,3,South
-Louisville,4,South
+Pennsylvania,14,South
+"Saint Mary's",7,South
+"Texas A&M",10,South
+Houston,2,South
+Idaho,15,South
+Arizona,1,West
+Long Island University,16,West
+Villanova,8,West
+Utah State,9,West
+Wisconsin,5,West
+High Point,12,West
+Arkansas,4,West
+Hawaii,13,West
+Brigham Young,6,West
+Texas,11,West
+NC State,17,West
+Gonzaga,3,West
+Kennesaw State,14,West
+"Miami (FL)",7,West
+Missouri,10,West
+Purdue,2,West
+"Queens (NC)",15,West

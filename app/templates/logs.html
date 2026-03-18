@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+
+{% block container_class %}container-lg{% endblock %}
+
+{% block content %}
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <h1 class="h4 mb-1">Logs</h1>
+        <p class="mb-0 text-muted">{{ selected_draft.name }} ({{ selected_draft.year }})</p>
+    </div>
+</div>
+
+<ul class="nav nav-pills mb-3">
+    <li class="nav-item">
+        <a class="nav-link {% if active_log_view == 'draft-events' %}active{% endif %}" href="{{ url_for('main.logs', view='draft-events') }}">Draft Events</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_log_view == 'score-changes' %}active{% endif %}" href="{{ url_for('main.logs', view='score-changes') }}">Score Changes</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_log_view == 'user-logins' %}active{% endif %}" href="{{ url_for('main.logs', view='user-logins') }}">User Logins</a>
+    </li>
+</ul>
+
+{% if active_log_view == 'draft-events' %}
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Time Executed</th>
+                        <th>Fantasy Team</th>
+                        <th>Draft Pick</th>
+                        <th>Team Name</th>
+                        <th>Player Name</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in draft_events %}
+                    <tr>
+                        <td>{{ row.executed_at or '—' }}</td>
+                        <td>{{ row.fantasy_team_name }}</td>
+                        <td>#{{ row.draft_pick }}</td>
+                        <td>{{ row.team_name }}</td>
+                        <td>{{ row.player_name }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="text-muted">No draft events found.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% elif active_log_view == 'score-changes' %}
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>User</th>
+                        <th>Fantasy Team</th>
+                        <th>Team Name</th>
+                        <th>Player Name</th>
+                        <th>Round</th>
+                        <th>Old Score</th>
+                        <th>New Score</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in score_changes %}
+                    <tr>
+                        <td>{{ row.changed_at or '—' }}</td>
+                        <td>{{ row.actor_role | upper }}</td>
+                        <td>{{ row.fantasy_team_name or '—' }}</td>
+                        <td>{{ row.team_name }}</td>
+                        <td>{{ row.player_name }}</td>
+                        <td>{{ row.round_label }}</td>
+                        <td>{{ row.old_points if row.old_points is not none else '—' }}</td>
+                        <td>{{ row.new_points if row.new_points is not none else '—' }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="text-muted">No score changes found.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% elif active_log_view == 'user-logins' %}
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Role</th>
+                        <th>IP Address</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in user_logins %}
+                    <tr>
+                        <td>{{ row.logged_in_at or '—' }}</td>
+                        <td>{{ row.role | upper }}</td>
+                        <td>{{ row.ip_address or '—' }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="3" class="text-muted">No login events found.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -275,10 +275,27 @@ def update_player_round_points(
     player_id: int,
     round_value: int,
     points: int | None,
+    actor_role: str = "unknown",
 ) -> None:
     engine = _draft_engine(main_db_url, database_name)
 
     with engine.begin() as conn:
+        existing_points_row = conn.execute(
+            text(
+                """
+                SELECT points
+                FROM tbl_player_points
+                WHERE player_id = :player_id
+                  AND tournament_round = :tournament_round
+                """
+            ),
+            {
+                "player_id": player_id,
+                "tournament_round": round_value,
+            },
+        ).mappings().one_or_none()
+        old_points = None if not existing_points_row else existing_points_row["points"]
+
         player_row = conn.execute(
             text("SELECT is_eliminated FROM tbl_players WHERE id = :player_id"),
             {"player_id": player_id},
@@ -335,7 +352,121 @@ def update_player_round_points(
                 },
             )
 
+        if old_points != points:
+            fantasy_team_row = conn.execute(
+                text(
+                    """
+                    SELECT fantasy_team_id
+                    FROM tbl_player_draft_event
+                    WHERE player_id = :player_id
+                    ORDER BY pick_number
+                    LIMIT 1
+                    """
+                ),
+                {"player_id": player_id},
+            ).mappings().one_or_none()
+
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO tbl_score_change_log
+                    (changed_at, actor_role, player_id, fantasy_team_id, tournament_round, old_points, new_points)
+                    VALUES (NOW(), :actor_role, :player_id, :fantasy_team_id, :tournament_round, :old_points, :new_points)
+                    """
+                ),
+                {
+                    "actor_role": (actor_role or "unknown").lower(),
+                    "player_id": player_id,
+                    "fantasy_team_id": None if not fantasy_team_row else fantasy_team_row["fantasy_team_id"],
+                    "tournament_round": round_value,
+                    "old_points": old_points,
+                    "new_points": points,
+                },
+            )
+
     engine.dispose()
+
+
+def get_draft_events_log(main_db_url: str, database_name: str, limit: int = 500) -> list[dict[str, Any]]:
+    engine = _draft_engine(main_db_url, database_name)
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT de.drafted_at,
+                       ft.name AS fantasy_team_name,
+                       de.pick_number,
+                       t.name AS team_name,
+                       p.first_name,
+                       p.last_name
+                FROM tbl_player_draft_event de
+                INNER JOIN tbl_fantasy_teams ft ON ft.id = de.fantasy_team_id
+                INNER JOIN tbl_players p ON p.id = de.player_id
+                INNER JOIN tbl_teams t ON t.id = p.team_id
+                ORDER BY de.drafted_at DESC NULLS LAST, de.pick_number DESC
+                LIMIT :limit
+                """
+            ),
+            {"limit": max(1, int(limit))},
+        ).mappings().all()
+
+    engine.dispose()
+
+    return [
+        {
+            "executed_at": row["drafted_at"],
+            "fantasy_team_name": row["fantasy_team_name"],
+            "draft_pick": row["pick_number"],
+            "team_name": row["team_name"],
+            "player_name": f"{row['first_name']} {row['last_name']}",
+        }
+        for row in rows
+    ]
+
+
+def get_score_changes_log(main_db_url: str, database_name: str, limit: int = 500) -> list[dict[str, Any]]:
+    engine = _draft_engine(main_db_url, database_name)
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT scl.changed_at,
+                       scl.actor_role,
+                       ft.name AS fantasy_team_name,
+                       t.name AS team_name,
+                       p.first_name,
+                       p.last_name,
+                       scl.tournament_round,
+                       scl.old_points,
+                       scl.new_points
+                FROM tbl_score_change_log scl
+                INNER JOIN tbl_players p ON p.id = scl.player_id
+                INNER JOIN tbl_teams t ON t.id = p.team_id
+                LEFT JOIN tbl_fantasy_teams ft ON ft.id = scl.fantasy_team_id
+                ORDER BY scl.changed_at DESC, scl.id DESC
+                LIMIT :limit
+                """
+            ),
+            {"limit": max(1, int(limit))},
+        ).mappings().all()
+
+    engine.dispose()
+
+    return [
+        {
+            "changed_at": row["changed_at"],
+            "actor_role": row["actor_role"],
+            "fantasy_team_name": row["fantasy_team_name"],
+            "team_name": row["team_name"],
+            "player_name": f"{row['first_name']} {row['last_name']}",
+            "round_label": "P" if int(row["tournament_round"]) == 0 else str(int(row["tournament_round"])),
+            "old_points": row["old_points"],
+            "new_points": row["new_points"],
+        }
+        for row in rows
+    ]
 
 
 def set_player_elimination_status(
@@ -528,7 +659,7 @@ def get_team_detail_payload(main_db_url: str, database_name: str, team_id: int) 
                        is_eliminated, is_injured
                 FROM tbl_players
                 WHERE team_id = :team_id
-                ORDER BY last_name, first_name
+                ORDER BY ppg DESC NULLS LAST, last_name, first_name
                 """
             ),
             {"team_id": team_id},
@@ -943,6 +1074,7 @@ def get_team_roster_payload(
     main_db_url: str,
     database_name: str,
     min_ppg: float,
+    only_available: bool = False,
 ) -> dict[str, Any]:
     engine = _draft_engine(main_db_url, database_name)
     with engine.connect() as conn:
@@ -1001,14 +1133,19 @@ def get_team_roster_payload(
             }
 
         if row["first_name"]:
+            is_injured = bool(row["is_injured"])
+            is_drafted = bool(row["is_drafted"])
+            if only_available and (is_injured or is_drafted):
+                continue
+
             teams_by_region_seed[key]["players"].append(
                 {
                     "player_id": row["player_id"],
                     "name": f"{row['first_name']} {row['last_name']}",
                     "position": row["position"] or "-",
                     "ppg": float(row["ppg"] or 0),
-                    "is_injured": bool(row["is_injured"]),
-                    "is_drafted": bool(row["is_drafted"]),
+                    "is_injured": is_injured,
+                    "is_drafted": is_drafted,
                 }
             )
 
@@ -1026,4 +1163,5 @@ def get_team_roster_payload(
         "regions": regions,
         "rows": roster_rows,
         "min_ppg": max(0.0, min_ppg),
+        "only_available": bool(only_available),
     }

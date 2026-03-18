@@ -39,6 +39,10 @@
                     <form method="post" action="{{ url_for('main.admin_fetch_rosters', draft_id=selected_draft.id) }}">
                         <button class="btn btn-outline-secondary btn-sm" type="submit">Fetch Rosters</button>
                     </form>
+                    <form method="post" action="{{ url_for('main.admin_reload_teams') }}" onsubmit="return confirm('Reload Teams will delete all team and player records, then reseed teams. Continue?');">
+                        <input type="hidden" name="draft_id" value="{{ selected_draft.id }}">
+                        <button class="btn btn-danger btn-sm" type="submit">Reload Teams</button>
+                    </form>
                     <form method="post" action="{{ url_for('main.admin_randomize_draft_order') }}">
                         <input type="hidden" name="draft_id" value="{{ selected_draft.id }}">
                         <button class="btn btn-outline-primary btn-sm" type="submit" {% if draft_order_locked %}disabled{% endif %}>Randomize</button>

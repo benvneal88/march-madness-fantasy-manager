@@ -1,3 +1,3 @@
-from app.models.mmfm import Draft
+from app.models.mmfm import Draft, UserLoginEvent
 
-__all__ = ["Draft"]
+__all__ = ["Draft", "UserLoginEvent"]

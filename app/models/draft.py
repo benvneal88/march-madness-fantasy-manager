@@ -133,6 +133,19 @@ tbl_player_draft_event = Table(
     Column("drafted_at", DateTime, nullable=True),
 )
 
+tbl_score_change_log = Table(
+    "tbl_score_change_log",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("changed_at", DateTime, nullable=False),
+    Column("actor_role", String(20), nullable=False),
+    Column("player_id", Integer, ForeignKey("tbl_players.id"), nullable=False),
+    Column("fantasy_team_id", Integer, ForeignKey("tbl_fantasy_teams.id"), nullable=True),
+    Column("tournament_round", Integer, nullable=False),
+    Column("old_points", Integer, nullable=True),
+    Column("new_points", Integer, nullable=True),
+)
+
 tbl_bracket = Table(
     "tbl_bracket",
     metadata,
@@ -258,6 +271,25 @@ def seed_teams_from_csv(main_db_url: str, database_name: str, year: int) -> dict
     engine.dispose()
     team_names = [r["name"] for r in rows] if inserted > 0 else []
     return {"inserted": inserted, "team_names": team_names}
+
+
+def reload_teams_from_csv(main_db_url: str, database_name: str, year: int) -> dict:
+    """Delete teams/players (and dependent rows) and reseed teams from CSV."""
+    draft_url = build_draft_database_url(main_db_url, database_name)
+    engine = create_engine(draft_url)
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                TRUNCATE TABLE tbl_players, tbl_teams
+                RESTART IDENTITY CASCADE
+                """
+            )
+        )
+
+    engine.dispose()
+    return seed_teams_from_csv(main_db_url, database_name, year)
 
 
 def populate_players_from_sportsref_roster(main_db_url: str, database_name: str, year: int) -> int:

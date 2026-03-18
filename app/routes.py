@@ -22,10 +22,12 @@ from app.app import (
     draft_player_pick,
     get_admin_view_data,
     get_draft_night_payload,
+    get_draft_events_log,
     get_fantasy_teams_payload,
     get_leaderboard_payload,
     get_player_detail,
     get_rosters_payload,
+    get_score_changes_log,
     get_team_detail_payload,
     get_team_roster_payload,
     lock_draft_order,
@@ -39,17 +41,34 @@ from app.app import (
     unassign_owner_from_fantasy_team,
 )
 from app.extensions import db
-from app.models import Draft
+from app.models import Draft, UserLoginEvent
 from app.models.draft import (
     build_draft_database_url,
     create_draft_database,
     create_draft_schema,
+    reload_teams_from_csv,
     seed_teams_from_csv,
 )
 from app.roster_jobs import get_roster_fetch_job_status, start_roster_fetch_job
 
 
 main_bp = Blueprint("main", __name__)
+
+
+def _request_ip_address() -> str | None:
+    # Prefer the left-most forwarded IP when behind a reverse proxy.
+    forwarded_for = request.headers.get("X-Forwarded-For", "").strip()
+    if forwarded_for:
+        client_ip = forwarded_for.split(",", 1)[0].strip()
+        if client_ip:
+            return client_ip[:64]
+
+    real_ip = request.headers.get("X-Real-IP", "").strip()
+    if real_ip:
+        return real_ip[:64]
+
+    remote_addr = (request.remote_addr or "").strip()
+    return remote_addr[:64] or None
 
 
 def _role_password_map() -> dict[str, str]:
@@ -136,6 +155,7 @@ def inject_nav_state() -> dict[str, object]:
         "selected_draft": selected_draft,
         "current_role": role,
         "current_theme": _theme_value(),
+        "app_version": current_app.config.get("VERSION", "1.0.0"),
     }
 
 
@@ -158,6 +178,17 @@ def login():
         if role in role_passwords and password == role_passwords[role]:
             session.clear()
             session["role"] = role
+
+            login_event = UserLoginEvent(
+                role=role,
+                ip_address=_request_ip_address(),
+            )
+            try:
+                db.session.add(login_event)
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
             flash("Logged in successfully.", "success")
             return redirect(url_for("main.select_draft"))
 
@@ -314,6 +345,7 @@ def fantasy_teams_update_points():
             player_id,
             round_value,
             points,
+            actor_role=session.get("role", "unknown"),
         )
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -479,6 +511,54 @@ def bracket():
     return render_template("placeholder.html", page_title="Bracket")
 
 
+@main_bp.route("/logs")
+@login_required
+@draft_required
+def logs():
+    selected_draft = _selected_draft()
+    if not selected_draft:
+        flash("Select a draft first.", "danger")
+        return redirect(url_for("main.select_draft"))
+
+    create_draft_schema(current_app.config["SQLALCHEMY_DATABASE_URI"], selected_draft.database_name)
+
+    active_log_view = request.args.get("view", "draft-events").strip().lower()
+    if active_log_view not in {"draft-events", "score-changes", "user-logins"}:
+        active_log_view = "draft-events"
+
+    draft_events = get_draft_events_log(
+        current_app.config["SQLALCHEMY_DATABASE_URI"],
+        selected_draft.database_name,
+    ) if active_log_view == "draft-events" else []
+
+    score_changes = get_score_changes_log(
+        current_app.config["SQLALCHEMY_DATABASE_URI"],
+        selected_draft.database_name,
+    ) if active_log_view == "score-changes" else []
+
+    user_logins = []
+    if active_log_view == "user-logins":
+        rows = UserLoginEvent.query.order_by(UserLoginEvent.logged_in_at.desc(), UserLoginEvent.id.desc()).limit(500).all()
+        user_logins = [
+            {
+                "logged_in_at": row.logged_in_at,
+                "role": row.role,
+                "ip_address": row.ip_address,
+            }
+            for row in rows
+        ]
+
+    return render_template(
+        "logs.html",
+        page_title="Logs",
+        selected_draft=selected_draft,
+        active_log_view=active_log_view,
+        draft_events=draft_events,
+        score_changes=score_changes,
+        user_logins=user_logins,
+    )
+
+
 @main_bp.route("/draft-night")
 @login_required
 @draft_required
@@ -492,6 +572,12 @@ def draft_night():
     min_ppg = request.args.get("min_ppg", default=5.0, type=float)
     if min_ppg is None:
         min_ppg = 5.0
+    only_available = request.args.get("only_available", "").strip().lower() in {
+        "1",
+        "true",
+        "on",
+        "yes",
+    }
 
     payload = get_draft_night_payload(
         current_app.config["SQLALCHEMY_DATABASE_URI"],
@@ -502,6 +588,7 @@ def draft_night():
         current_app.config["SQLALCHEMY_DATABASE_URI"],
         selected_draft.database_name,
         min_ppg,
+        only_available=only_available,
     )
     return render_template(
         "draft_night.html",
@@ -733,6 +820,33 @@ def admin_fetch_rosters(draft_id: int):
         flash("Roster fetch is already running for this draft.", "warning")
 
     return redirect(url_for("main.admin_draft_detail", draft_id=draft.id))
+
+
+@main_bp.post("/admin/reload-teams")
+@login_required
+@role_required("admin")
+def admin_reload_teams():
+    selected_draft = _draft_from_form_or_session()
+    if not selected_draft:
+        flash("Select a draft first.", "danger")
+        return redirect(url_for("main.select_draft"))
+
+    try:
+        create_draft_schema(current_app.config["SQLALCHEMY_DATABASE_URI"], selected_draft.database_name)
+        result = reload_teams_from_csv(
+            current_app.config["SQLALCHEMY_DATABASE_URI"],
+            selected_draft.database_name,
+            selected_draft.year,
+        )
+
+        if result.get("inserted", 0) > 0:
+            flash(f"Reloaded teams from seed file. Inserted {result['inserted']} teams.", "warning")
+        else:
+            flash("Teams were cleared, but no seed file data was inserted.", "warning")
+    except Exception:
+        flash("Failed to reload teams.", "danger")
+
+    return redirect(url_for("main.admin_draft_detail", draft_id=selected_draft.id))
 
 
 @main_bp.get("/admin/fetch-rosters/<int:draft_id>/status")
