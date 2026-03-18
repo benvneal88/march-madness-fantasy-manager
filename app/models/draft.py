@@ -295,7 +295,8 @@ def reload_teams_from_csv(main_db_url: str, database_name: str, year: int) -> di
 def populate_players_from_sportsref_roster(main_db_url: str, database_name: str, year: int) -> int:
     """Copy player records from tbl_sportsref_school_roster into tbl_players.
 
-    Only runs when tbl_players is empty. Joins on tbl_teams.name == school_name.
+    Inserts players for teams that do not yet have any players populated.
+    Joins on tbl_teams.name == school_name and skips duplicate player rows.
     Returns the number of player rows inserted.
     """
     draft_url = build_draft_database_url(main_db_url, database_name)
@@ -303,16 +304,38 @@ def populate_players_from_sportsref_roster(main_db_url: str, database_name: str,
     inserted = 0
 
     with engine.begin() as conn:
-        player_count = conn.execute(text("SELECT COUNT(*) FROM tbl_players")).scalar_one()
-        if player_count > 0:
-            return 0
-
         team_rows = conn.execute(
             text("SELECT id, name FROM tbl_teams")
         ).mappings().all()
         team_id_by_name: dict[str, int] = {
             row["name"].strip().lower(): row["id"] for row in team_rows
         }
+
+        populated_team_ids = set(
+            conn.execute(
+                text(
+                    """
+                    SELECT DISTINCT team_id
+                    FROM tbl_players
+                    """
+                )
+            ).scalars().all()
+        )
+
+        target_team_ids = {team_id for team_id in team_id_by_name.values() if team_id not in populated_team_ids}
+        if not target_team_ids:
+            return 0
+
+        existing_player_keys = set(
+            conn.execute(
+                text(
+                    """
+                    SELECT team_id, first_name, last_name
+                    FROM tbl_players
+                    """
+                )
+            ).all()
+        )
 
         roster_rows = conn.execute(
             text(
@@ -327,6 +350,18 @@ def populate_players_from_sportsref_roster(main_db_url: str, database_name: str,
             team_id = team_id_by_name.get(row["school_name"].strip().lower())
             if not team_id:
                 continue
+            if team_id not in target_team_ids:
+                continue
+
+            first_name = (row["first_name"] or "").strip()
+            last_name = (row["last_name"] or "").strip()
+            if not first_name and not last_name:
+                continue
+
+            player_key = (team_id, first_name, last_name)
+            if player_key in existing_player_keys:
+                continue
+
             try:
                 jersey = int(row["jersey_number"]) if row["jersey_number"] else None
             except (ValueError, TypeError):
@@ -341,8 +376,8 @@ def populate_players_from_sportsref_roster(main_db_url: str, database_name: str,
                 ),
                 {
                     "team_id": team_id,
-                    "first_name": row["first_name"] or "",
-                    "last_name": row["last_name"] or "",
+                    "first_name": first_name,
+                    "last_name": last_name,
                     "position": row["position"],
                     "ppg": row["ppg"],
                     "rpg": row["rpg"],
@@ -354,6 +389,7 @@ def populate_players_from_sportsref_roster(main_db_url: str, database_name: str,
                     "hometown": row["hometown"],
                 },
             )
+            existing_player_keys.add(player_key)
             inserted += 1
 
     engine.dispose()
