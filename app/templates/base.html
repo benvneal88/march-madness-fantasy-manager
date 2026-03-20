@@ -10,10 +10,10 @@
 </head>
 <body class="bg-body-tertiary d-flex flex-column min-vh-100">
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand mx-auto" href="{{ url_for('main.index') }}">March Madness Fantasy Manager</a>
+    <div class="container-fluid position-relative">
+        <a class="navbar-brand position-absolute top-50 start-50 translate-middle m-0" href="{{ url_for('main.index') }}">March Madness Fantasy Manager</a>
         {% if current_role %}
-        <div class="d-flex align-items-center gap-2">
+        <div class="d-flex align-items-center gap-2 ms-auto">
             <div class="dropdown">
                 <button class="btn btn-outline-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                     Select Draft: {% if selected_draft %}{{ selected_draft.name }} ({{ selected_draft.year }}){% else %}None{% endif %}

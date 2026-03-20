@@ -37,6 +37,7 @@ from app.app import (
     search_available_players,
     set_player_elimination_status,
     set_player_injured_status,
+    set_play_in_round_visibility,
     update_player_round_points,
     unassign_owner_from_fantasy_team,
 )
@@ -698,9 +699,34 @@ def admin_draft_detail(draft_id: int):
         fantasy_teams=draft_payload["fantasy_teams"],
         owners=draft_payload["owners"],
         draft_order_locked=draft_payload["draft_order_locked"],
+        show_play_in_round=draft_payload["show_play_in_round"],
         roster_fetch_status=get_roster_fetch_job_status(selected_draft.id),
         active_admin_tab="drafts",
     )
+
+
+@main_bp.post("/admin/update-play-in-round-visibility")
+@login_required
+@role_required("admin")
+def admin_update_play_in_round_visibility():
+    selected_draft = _draft_from_form_or_session()
+    if not selected_draft:
+        flash("Select a draft first.", "danger")
+        return redirect(url_for("main.select_draft"))
+
+    show_play_in_round = request.form.get("show_play_in_round") == "on"
+
+    try:
+        set_play_in_round_visibility(
+            current_app.config["SQLALCHEMY_DATABASE_URI"],
+            selected_draft.database_name,
+            show_play_in_round,
+        )
+        flash("Play-in round visibility updated.", "success")
+    except Exception:
+        flash("Unable to update play-in round visibility.", "danger")
+
+    return redirect(url_for("main.admin_draft_detail", draft_id=selected_draft.id))
 
 
 @main_bp.post("/admin/randomize-draft-order")

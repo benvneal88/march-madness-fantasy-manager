@@ -5,7 +5,7 @@ class Config:
     SECRET_KEY = os.getenv("SECRET_KEY")
     SQLALCHEMY_DATABASE_URI = os.getenv("SQLALCHEMY_DATABASE_URI")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    VERSION = os.getenv("APP_VERSION", "0.1.0")
+    VERSION = "0.1.1"
 
     VIEWER_PASSWORD = os.getenv("VIEWER_PASSWORD")
     EDITOR_PASSWORD = os.getenv("EDITOR_PASSWORD")

@@ -45,6 +45,22 @@
                             <td>
                                 <div class="d-flex flex-wrap align-items-center gap-2">
                                     <span class="fw-semibold">{{ player.player_name }}</span>
+                                    <span class="text-muted">|</span>
+                                    {% if can_edit_points %}
+                                    <form method="post" action="{{ url_for('main.fantasy_teams_toggle_eliminated') }}" class="d-inline">
+                                        <input type="hidden" name="player_id" value="{{ player.player_id }}">
+                                        <input type="hidden" name="is_eliminated" value="{{ 'false' if player.is_eliminated else 'true' }}">
+                                        <button type="submit" class="btn btn-sm py-0 px-1 status-btn {% if player.is_eliminated %}status-btn-eliminated{% else %}status-btn-active{% endif %}" style="font-size:0.7rem;">
+                                            {% if player.is_eliminated %}Eliminated{% else %}Active{% endif %}
+                                        </button>
+                                    </form>
+                                    {% else %}
+                                    {% if player.is_eliminated %}
+                                    <span class="badge status-badge status-badge-eliminated">Eliminated</span>
+                                    {% else %}
+                                    <span class="badge status-badge status-badge-active">Active</span>
+                                    {% endif %}
+                                    {% endif %}
                                     <span class="small text-muted">| {{ player.college_team_name }} | Pick #{{ player.pick_number }}</span>
                                     {% if can_edit_points %}
                                     <div class="row-point-actions d-none">
@@ -52,23 +68,6 @@
                                         <button type="button" class="btn btn-outline-secondary btn-sm row-point-cancel">Cancel</button>
                                         <span class="row-point-error text-danger small d-none"></span>
                                     </div>
-                                    {% endif %}
-                                </div>
-                                <div class="d-flex flex-wrap align-items-center gap-2 mt-1">
-                                    {% if can_edit_points %}
-                                    <form method="post" action="{{ url_for('main.fantasy_teams_toggle_eliminated') }}" class="d-inline">
-                                        <input type="hidden" name="player_id" value="{{ player.player_id }}">
-                                        <input type="hidden" name="is_eliminated" value="{{ 'false' if player.is_eliminated else 'true' }}">
-                                        <button type="submit" class="btn btn-sm py-0 px-1 {% if player.is_eliminated %}btn-danger{% else %}btn-success{% endif %}" style="font-size:0.7rem;">
-                                            {% if player.is_eliminated %}Eliminated{% else %}Active{% endif %}
-                                        </button>
-                                    </form>
-                                    {% else %}
-                                    {% if player.is_eliminated %}
-                                    <span class="badge text-bg-danger">Eliminated</span>
-                                    {% else %}
-                                    <span class="badge text-bg-success-subtle border border-success-subtle text-success-emphasis">Active</span>
-                                    {% endif %}
                                     {% endif %}
                                 </div>
                             </td>
@@ -145,6 +144,50 @@
 
 .point-display:hover {
     border-bottom-color: currentColor;
+}
+
+.status-btn {
+    border-width: 1px;
+}
+
+.status-btn-active {
+    background-color: #dbe9f7;
+    border-color: #b9d0e5;
+    color: #2f4a63;
+}
+
+.status-btn-active:hover {
+    background-color: #cddff0;
+    border-color: #a9c5de;
+    color: #22384d;
+}
+
+.status-btn-eliminated {
+    background-color: #f8dfe1;
+    border-color: #edc3c7;
+    color: #7c2f36;
+}
+
+.status-btn-eliminated:hover {
+    background-color: #f4d2d5;
+    border-color: #e4aeb5;
+    color: #67252b;
+}
+
+.status-badge {
+    border: 1px solid transparent;
+}
+
+.status-badge-active {
+    background-color: #dbe9f7;
+    border-color: #b9d0e5;
+    color: #2f4a63;
+}
+
+.status-badge-eliminated {
+    background-color: #f8dfe1;
+    border-color: #edc3c7;
+    color: #7c2f36;
 }
 </style>
 

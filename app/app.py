@@ -22,21 +22,54 @@ FANTASY_ROUND_COLUMNS: list[dict[str, Any]] = [
     {"key": "6", "label": "6", "round_value": 6},
 ]
 
+NON_PLAY_IN_ROUND_COLUMNS: list[dict[str, Any]] = [
+    col for col in FANTASY_ROUND_COLUMNS if col["round_value"] != 0
+]
+
+
+def _ensure_draft_settings(conn) -> None:
+    conn.execute(
+        text(
+            """
+            ALTER TABLE tbl_draft_settings
+            ADD COLUMN IF NOT EXISTS show_play_in_round BOOLEAN NOT NULL DEFAULT TRUE
+            """
+        )
+    )
+    conn.execute(
+        text(
+            """
+            INSERT INTO tbl_draft_settings (id, draft_order_locked, show_play_in_round)
+            VALUES (1, false, true)
+            ON CONFLICT (id) DO NOTHING
+            """
+        )
+    )
+
+
+def _is_play_in_round_visible(conn) -> bool:
+    _ensure_draft_settings(conn)
+    visible = conn.execute(
+        text("SELECT show_play_in_round FROM tbl_draft_settings WHERE id = 1")
+    ).scalar_one()
+    return bool(visible)
+
+
+def _fantasy_round_columns(conn) -> list[dict[str, Any]]:
+    return FANTASY_ROUND_COLUMNS if _is_play_in_round_visible(conn) else NON_PLAY_IN_ROUND_COLUMNS
+
 
 def get_admin_view_data(main_db_url: str, database_name: str) -> dict[str, Any]:
     engine = _draft_engine(main_db_url, database_name)
-    payload: dict[str, Any] = {"fantasy_teams": [], "owners": [], "draft_order_locked": False}
+    payload: dict[str, Any] = {
+        "fantasy_teams": [],
+        "owners": [],
+        "draft_order_locked": False,
+        "show_play_in_round": True,
+    }
 
     with engine.begin() as conn:
-        conn.execute(
-            text(
-                """
-                INSERT INTO tbl_draft_settings (id, draft_order_locked)
-                VALUES (1, false)
-                ON CONFLICT (id) DO NOTHING
-                """
-            )
-        )
+        _ensure_draft_settings(conn)
 
         team_rows = conn.execute(
             text("SELECT id, name, is_active, draft_position FROM tbl_fantasy_teams ORDER BY id")
@@ -54,13 +87,20 @@ def get_admin_view_data(main_db_url: str, database_name: str) -> dict[str, Any]:
                 """
             )
         ).mappings()
-        locked = conn.execute(
-            text("SELECT draft_order_locked FROM tbl_draft_settings WHERE id = 1")
-        ).scalar_one()
+        settings_row = conn.execute(
+            text(
+                """
+                SELECT draft_order_locked, show_play_in_round
+                FROM tbl_draft_settings
+                WHERE id = 1
+                """
+            )
+        ).mappings().one()
 
         payload["fantasy_teams"] = [dict(row) for row in team_rows]
         owners = [dict(row) for row in owner_rows]
-        payload["draft_order_locked"] = bool(locked)
+        payload["draft_order_locked"] = bool(settings_row["draft_order_locked"])
+        payload["show_play_in_round"] = bool(settings_row["show_play_in_round"])
 
         assignments_by_owner: dict[int, list[dict[str, Any]]] = {}
         for row in assignment_rows:
@@ -84,7 +124,8 @@ def get_admin_view_data(main_db_url: str, database_name: str) -> dict[str, Any]:
 def get_leaderboard_payload(main_db_url: str, database_name: str) -> dict[str, Any]:
     engine = _draft_engine(main_db_url, database_name)
 
-    with engine.connect() as conn:
+    with engine.begin() as conn:
+        round_columns_full = _fantasy_round_columns(conn)
         teams = conn.execute(
             text(
                 """
@@ -111,8 +152,8 @@ def get_leaderboard_payload(main_db_url: str, database_name: str) -> dict[str, A
 
     engine.dispose()
 
-    round_columns = [{"key": col["key"], "label": col["label"]} for col in FANTASY_ROUND_COLUMNS]
-    round_key_by_value = {col["round_value"]: col["key"] for col in FANTASY_ROUND_COLUMNS}
+    round_columns = [{"key": col["key"], "label": col["label"]} for col in round_columns_full]
+    round_key_by_value = {col["round_value"]: col["key"] for col in round_columns_full}
 
     team_round_points: dict[int, dict[str, int]] = {}
     for row in point_rows:
@@ -125,7 +166,7 @@ def get_leaderboard_payload(main_db_url: str, database_name: str) -> dict[str, A
     rows: list[dict[str, Any]] = []
     for team in teams:
         team_id = int(team["id"])
-        rounds = {col["key"]: 0 for col in FANTASY_ROUND_COLUMNS}
+        rounds = {col["key"]: 0 for col in round_columns_full}
         rounds.update(team_round_points.get(team_id, {}))
         total = sum(rounds.values())
         rows.append(
@@ -149,7 +190,8 @@ def get_leaderboard_payload(main_db_url: str, database_name: str) -> dict[str, A
 def get_fantasy_teams_payload(main_db_url: str, database_name: str) -> dict[str, Any]:
     engine = _draft_engine(main_db_url, database_name)
 
-    with engine.connect() as conn:
+    with engine.begin() as conn:
+        round_columns_full = _fantasy_round_columns(conn)
         fantasy_teams = conn.execute(
             text(
                 """
@@ -202,8 +244,8 @@ def get_fantasy_teams_payload(main_db_url: str, database_name: str) -> dict[str,
 
     engine.dispose()
 
-    round_columns = [{"key": col["key"], "label": col["label"]} for col in FANTASY_ROUND_COLUMNS]
-    round_key_by_value = {col["round_value"]: col["key"] for col in FANTASY_ROUND_COLUMNS}
+    round_columns = [{"key": col["key"], "label": col["label"]} for col in round_columns_full]
+    round_key_by_value = {col["round_value"]: col["key"] for col in round_columns_full}
 
     points_by_player: dict[int, dict[str, int | None]] = {}
     for row in points_rows:
@@ -225,7 +267,7 @@ def get_fantasy_teams_payload(main_db_url: str, database_name: str) -> dict[str,
     players_by_team: dict[int, list[dict[str, Any]]] = {}
     for row in drafted_players:
         player_id = int(row["player_id"])
-        points_map: dict[str, int | None] = {col["key"]: None for col in FANTASY_ROUND_COLUMNS}
+        points_map: dict[str, int | None] = {col["key"]: None for col in round_columns_full}
         points_map.update(points_by_player.get(player_id, {}))
         player_total = sum(value for value in points_map.values() if value is not None)
 
@@ -244,7 +286,7 @@ def get_fantasy_teams_payload(main_db_url: str, database_name: str) -> dict[str,
     teams_payload: list[dict[str, Any]] = []
     for team in fantasy_teams:
         team_players = players_by_team.get(int(team["id"]), [])
-        round_totals = {col["key"]: 0 for col in FANTASY_ROUND_COLUMNS}
+        round_totals = {col["key"]: 0 for col in round_columns_full}
         for player in team_players:
             for round_key, value in player["points"].items():
                 if value is not None:
@@ -789,15 +831,7 @@ def unassign_owner_from_fantasy_team(
 def randomize_draft_order(main_db_url: str, database_name: str) -> None:
     engine = _draft_engine(main_db_url, database_name)
     with engine.begin() as conn:
-        conn.execute(
-            text(
-                """
-                INSERT INTO tbl_draft_settings (id, draft_order_locked)
-                VALUES (1, false)
-                ON CONFLICT (id) DO NOTHING
-                """
-            )
-        )
+        _ensure_draft_settings(conn)
         is_locked = conn.execute(
             text("SELECT draft_order_locked FROM tbl_draft_settings WHERE id = 1")
         ).scalar_one()
@@ -822,6 +856,7 @@ def randomize_draft_order(main_db_url: str, database_name: str) -> None:
 def lock_draft_order(main_db_url: str, database_name: str) -> None:
     engine = _draft_engine(main_db_url, database_name)
     with engine.begin() as conn:
+        _ensure_draft_settings(conn)
         team_rows = conn.execute(
             text("SELECT draft_position FROM tbl_fantasy_teams ORDER BY id")
         ).scalars().all()
@@ -902,15 +937,7 @@ def get_draft_night_payload(main_db_url: str, database_name: str, rounds: int) -
     }
 
     with engine.begin() as conn:
-        conn.execute(
-            text(
-                """
-                INSERT INTO tbl_draft_settings (id, draft_order_locked)
-                VALUES (1, false)
-                ON CONFLICT (id) DO NOTHING
-                """
-            )
-        )
+        _ensure_draft_settings(conn)
         teams = conn.execute(
             text(
                 """
@@ -1005,6 +1032,7 @@ def draft_player_pick(
     engine = _draft_engine(main_db_url, database_name)
 
     with engine.begin() as conn:
+        _ensure_draft_settings(conn)
         is_locked = conn.execute(
             text("SELECT draft_order_locked FROM tbl_draft_settings WHERE id = 1")
         ).scalar_one_or_none()
@@ -1067,6 +1095,23 @@ def draft_player_pick(
             },
         )
 
+    engine.dispose()
+
+
+def set_play_in_round_visibility(main_db_url: str, database_name: str, show_play_in_round: bool) -> None:
+    engine = _draft_engine(main_db_url, database_name)
+    with engine.begin() as conn:
+        _ensure_draft_settings(conn)
+        conn.execute(
+            text(
+                """
+                UPDATE tbl_draft_settings
+                SET show_play_in_round = :show_play_in_round
+                WHERE id = 1
+                """
+            ),
+            {"show_play_in_round": bool(show_play_in_round)},
+        )
     engine.dispose()
 
 

@@ -74,6 +74,7 @@ tbl_draft_settings = Table(
     metadata,
     Column("id", Integer, primary_key=True),
     Column("draft_order_locked", Boolean, nullable=False, default=False),
+    Column("show_play_in_round", Boolean, nullable=False, default=True),
 )
 
 tbl_owners = Table(
@@ -224,6 +225,16 @@ def create_draft_schema(main_db_url: str, database_name: str) -> None:
     draft_url = build_draft_database_url(main_db_url, database_name)
     draft_engine = create_engine(draft_url)
     metadata.create_all(draft_engine)
+
+    with draft_engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                ALTER TABLE tbl_draft_settings
+                ADD COLUMN IF NOT EXISTS show_play_in_round BOOLEAN NOT NULL DEFAULT TRUE
+                """
+            )
+        )
 
     draft_engine.dispose()
 

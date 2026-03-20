@@ -25,6 +25,14 @@
                     </div>
                     <button class="btn btn-outline-primary btn-sm" type="submit">Save</button>
                 </form>
+                <form method="post" action="{{ url_for('main.admin_update_play_in_round_visibility') }}" class="d-flex align-items-center gap-2">
+                    <input type="hidden" name="draft_id" value="{{ selected_draft.id }}">
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" name="show_play_in_round" id="show_play_in_round" {% if show_play_in_round %}checked{% endif %}>
+                        <label class="form-check-label" for="show_play_in_round">Show Play-In (P)</label>
+                    </div>
+                    <button class="btn btn-outline-primary btn-sm" type="submit">Save</button>
+                </form>
             </div>
         </div>
     </div>
@@ -111,6 +119,7 @@
                     <li class="list-group-item d-flex justify-content-between"><span>Slug</span><span>{{ selected_draft.slug }}</span></li>
                     <li class="list-group-item d-flex justify-content-between"><span>Database</span><span>{{ selected_draft.database_name }}</span></li>
                     <li class="list-group-item d-flex justify-content-between"><span>Active</span><span>{% if selected_draft.is_active %}Yes{% else %}No{% endif %}</span></li>
+                    <li class="list-group-item d-flex justify-content-between"><span>Show Play-In (P)</span><span>{% if show_play_in_round %}Yes{% else %}No{% endif %}</span></li>
                 </ul>
             </div>
         </div>
